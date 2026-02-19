@@ -1,0 +1,15 @@
+project: 
+  type: book
+
+book: 
+  title: "Akkutte effekter av apné og bikarbonat på sykkelprestasjon"
+  author: "Anders Nybakk"
+  chapters: 
+    - acknowledgements.qmd
+    - abstract.qmd
+    - index.qmd
+    - theory.qmd
+    - introduction.qmd
+    - methods.qmd
+    - results.qmd
+    - discussion.qmd
