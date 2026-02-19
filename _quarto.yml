@@ -13,3 +13,11 @@ book:
     - methods.qmd
     - results.qmd
     - discussion.qmd
+
+bibliography: resources/bib-final.bib
+
+format:
+  html: default
+  pdf: default
+  docx: default
+  
