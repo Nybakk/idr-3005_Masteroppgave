@@ -18,12 +18,14 @@ book:
 
 bibliography: resources/bib-final.bib
 
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+
 format:
-  html:
-    mainfont: "Times New Roman"
-  pdf:
-    mainfont: "Times New Roman"
   docx:
-    reference-doc: reference-doc.docx 
-    
-  
+    toc: true
+    number-sections: true
+

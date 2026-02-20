@@ -1,5 +1,142 @@
 ---
-title: "results"
-format: html
+title: "Resultat"
+author: "Anders Nybakk"
+code-fold: true
+execute:
+  warning: false  # Skjuler varselmeldinger
+editor_options: 
+  chunk_output_type: console
+bibliography: resources/bib-final.bib
 ---
+## Watt
 
+```{r}
+#| label: fig-box-meanwatt
+#| fig-cap: "Boksdiagram av gjennomsnittswatt per deltaker. Boks = median/IQR. Diamant og tynn tverrstrek = gjennomsnitt. Tall angir gjennomsnittswatt."
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+library(dplyr)
+library(ggplot2)
+
+path <- file.path("Data", "Watt.xlsx")
+if (!file.exists(path)) stop("Finner ikke Data/Watt.xlsx under render.")
+
+w <- tryCatch(
+  readxl::read_xlsx(path),
+  error = function(e1) {
+    if (requireNamespace("openxlsx", quietly = TRUE)) openxlsx::read.xlsx(path) else stop(e1)
+  }
+)
+
+# Kolonne B = test
+test_col_idx <- 2
+
+# Kolonne F:AS = watt (6:45)
+watt_cols_idx <- 6:min(45, ncol(w))
+
+# Standardiser test (ASCII-trygt)
+test_raw <- tolower(trimws(as.character(w[[test_col_idx]])))
+test_std <- ifelse(grepl("^ap", test_raw), "Apne",
+                   ifelse(grepl("^bik", test_raw), "Bikarb",
+                          ifelse(grepl("^pla", test_raw), "Placebo", NA)))
+
+# Watt → numerisk
+watt_mat <- as.data.frame(w[, watt_cols_idx])
+watt_mat[] <- lapply(watt_mat, function(x) suppressWarnings(as.numeric(x)))
+
+# Gjennomsnitt per deltaker
+mean_per_subject <- data.frame(
+  test = test_std,
+  mean_watt = rowMeans(as.matrix(watt_mat), na.rm = TRUE)
+) %>%
+  filter(!is.na(test))
+
+# Plot
+ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
+  geom_boxplot(outlier.shape = NA, linewidth = 0.8) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, linewidth = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+  stat_summary(
+    fun = mean,
+    geom = "text",
+    aes(label = sprintf("%.1f W", after_stat(y))),
+    vjust = -0.8,
+    size = 3.5,
+    show.legend = FALSE
+  ) +
+  geom_jitter(width = 0.12, height = 0, alpha = 0.6) +
+  labs(x = NULL, y = "Gjennomsnittswatt", color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+
+
+```{r}
+#| label: fig-mean-watt
+#| fig-cap: "Gjennomsnittswatt over tid for Apne, Bikarb og Placebo."
+#| fig-width: 7
+#| fig-height: 4.5
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+library(dplyr)
+library(ggplot2)
+
+path <- file.path("Data", "Watt.xlsx")
+
+if (!file.exists(path)) stop("Finner ikke Data/Watt.xlsx under render. Sjekk at fila ligger i prosjektmappen /Data.")
+
+# Les Excel (robust)
+w <- tryCatch(
+  readxl::read_xlsx(path),
+  error = function(e) {
+    if (requireNamespace("openxlsx", quietly = TRUE)) {
+      openxlsx::read.xlsx(path)
+    } else {
+      stop("readxl kunne ikke lese filen, og openxlsx er ikke installert. Installer en av dem.")
+    }
+  }
+)
+
+if (!is.data.frame(w) || ncol(w) < 6) stop("Excel ble lest, men ser ikke ut som forventet (må ha minst kolonner til F).")
+
+test_col_idx <- 2
+watt_cols_idx <- 6:ncol(w)
+time_min_vec <- seq(0, by = 0.5, length.out = length(watt_cols_idx))
+
+test_raw <- tolower(trimws(as.character(w[[test_col_idx]])))
+test_std <- ifelse(grepl("^ap", test_raw), "Apne",
+                   ifelse(grepl("^bik", test_raw), "Bikarb",
+                          ifelse(grepl("^pla", test_raw), "Placebo", NA)))
+
+watt_mat <- as.data.frame(w[, watt_cols_idx])
+watt_mat[] <- lapply(watt_mat, function(x) suppressWarnings(as.numeric(x)))
+
+long <- data.frame(
+  test = rep(test_std, each = length(watt_cols_idx)),
+  time_min = rep(time_min_vec, times = nrow(w)),
+  watt = as.vector(t(as.matrix(watt_mat)))
+)
+long <- long[!is.na(long$test), ]
+
+mean_watt <- long %>%
+  group_by(test, time_min) %>%
+  summarise(mean_watt = mean(watt, na.rm = TRUE), .groups = "drop")
+
+p <- ggplot(mean_watt, aes(x = time_min, y = mean_watt, color = test)) +
+  geom_line(linewidth = 1) +
+  scale_x_continuous(breaks = seq(0, max(time_min_vec), by = 2)) +
+  labs(x = "Tid (min)", y = "Gjennomsnittswatt", color = NULL) +
+  theme_minimal(base_size = 12)
+
+p
+
+```
