@@ -4,6 +4,7 @@ project:
 book: 
   title: "Akkutte effekter av apné og bikarbonat på sykkelprestasjon"
   author: "Anders Nybakk"
+  date: "15.05.2026"
   chapters: 
     - acknowledgements.qmd
     - abstract.qmd
@@ -13,11 +14,16 @@ book:
     - methods.qmd
     - results.qmd
     - discussion.qmd
+    - references.qmd
 
 bibliography: resources/bib-final.bib
 
 format:
   html: default
+    mainfont: "Times New Roman"
   pdf: default
+    mainfont: "Times New Roman"
   docx: default
+    reference-doc: reference-doc.docx 
+    
   
