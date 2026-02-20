@@ -1,5 +1,182 @@
 ---
-title: "methods"
-format: html
+title: "Metode"
+author: "Anders Nybakk"
+code-fold: true
+execute:
+  warning: false  # Skjuler varselmeldinger
+editor_options: 
+  chunk_output_type: console
+bibliography: resources/bib-final.bib
 ---
+## Deltakere
+
+
+```{r}
+#| label: tbl-deltakere
+#| tbl-cap: "Deltakeroversikt"
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(flextable)
+library(officer)
+library(stringi)
+
+# ---------- hard sanitizer ----------
+fix_text <- function(x) {
+  x <- as.character(x)
+  x <- stringi::stri_enc_toutf8(x, is_unknown_8bit = TRUE)
+  x <- iconv(x, from = "UTF-8", to = "UTF-8", sub = "")
+  x[is.na(x)] <- ""
+  x <- gsub("[\t\r\n]+", " ", x, perl = TRUE)
+  x <- gsub("[[:cntrl:]]+", "", x, perl = TRUE)
+  trimws(x)
+}
+
+# 1) Les inn Excel
+Deltakere <- read_excel("data/Deltakere.xlsx") %>%
+  clean_names() %>%
+  mutate(across(where(is.character), fix_text))
+
+# 2) Variabler som skal med
+vars <- c("alder", "vekt", "hoyde", "hf_maks", "vo2", "vo2_kg", "x4mmol_w")
+
+# 3) Long-format
+long <- Deltakere %>%
+  select(kjonn, all_of(vars)) %>%
+  mutate(
+    kjonn = fix_text(kjonn),
+    across(all_of(vars), ~ suppressWarnings(as.numeric(.x)))
+  ) %>%
+  pivot_longer(all_of(vars), names_to = "variabel", values_to = "verdi")
+
+# n per gruppe
+n_sex <- Deltakere %>%
+  transmute(kjonn = fix_text(kjonn)) %>%
+  mutate(gruppe = case_when(
+    str_to_lower(kjonn) == "mann"   ~ "Menn",
+    str_to_lower(kjonn) == "kvinne" ~ "Kvinner",
+    TRUE ~ kjonn
+  )) %>%
+  count(gruppe, name = "n")
+
+n_total <- tibble(gruppe = "Gruppe", n = nrow(Deltakere))
+
+# Stat per kjønn
+sum_sex <- long %>%
+  summarise(
+    .by = c(kjonn, variabel),
+    m = mean(verdi, na.rm = TRUE),
+    s = sd(verdi, na.rm = TRUE)
+  ) %>%
+  mutate(gruppe = case_when(
+    str_to_lower(kjonn) == "mann"   ~ "Menn",
+    str_to_lower(kjonn) == "kvinne" ~ "Kvinner",
+    TRUE ~ kjonn
+  )) %>%
+  select(gruppe, variabel, m, s)
+
+# Stat total
+sum_total <- long %>%
+  summarise(
+    .by = variabel,
+    m = mean(verdi, na.rm = TRUE),
+    s = sd(verdi, na.rm = TRUE)
+  ) %>%
+  mutate(gruppe = "Gruppe") %>%
+  select(gruppe, variabel, m, s)
+
+# Snudd tabell
+tabell <- bind_rows(sum_sex, sum_total) %>%
+  mutate(stat = paste0(sprintf("%.1f", m), " (", sprintf("%.1f", s), ")")) %>%
+  select(variabel, gruppe, stat) %>%
+  pivot_wider(names_from = gruppe, values_from = stat) %>%
+  mutate(variabel = factor(variabel, levels = vars)) %>%
+  arrange(variabel) %>%
+  mutate(Maal = as.character(variabel)) %>%
+  select(Maal, Kvinner, Menn, Gruppe) %>%
+  mutate(across(where(is.character), fix_text))
+
+# ---- legg til ASCII-placeholder for undertekst ----
+n_main <- nrow(tabell)
+tabell <- bind_rows(
+  tabell,
+  tibble(Maal = "NOTE_ASCII", Kvinner = "", Menn = "", Gruppe = "")
+)
+
+# ---------- flextable ----------
+ft <- flextable(tabell)
+
+# Header med n
+n_lookup <- bind_rows(n_sex, n_total) %>% distinct(gruppe, .keep_all = TRUE)
+n_kv <- n_lookup$n[n_lookup$gruppe == "Kvinner"][1]
+n_me <- n_lookup$n[n_lookup$gruppe == "Menn"][1]
+n_gr <- n_lookup$n[n_lookup$gruppe == "Gruppe"][1]
+
+ft <- set_header_labels(
+  ft,
+  Maal    = "Mal",
+  Kvinner = paste0("Kvinner (n = ", n_kv, ")"),
+  Menn    = paste0("Menn (n = ", n_me, ")"),
+  Gruppe  = paste0("Gruppe (n = ", n_gr, ")")
+)
+
+# "Mål" i header
+ft <- compose(ft, part = "header", j = "Maal",
+              value = as_paragraph("M", "\u00E5", "l"))
+
+# Radetiketter (kun ekte mål)
+make_row_label <- function(var) {
+  switch(
+    var,
+    alder    = as_paragraph("Alder (", "\u00E5", "r)"),
+    vekt     = as_paragraph("Kroppsmasse (kg)"),
+    hoyde    = as_paragraph("H", "\u00F8", "yde (cm)"),
+    hf_maks  = as_paragraph("HF-maks (bpm)"),
+    vo2      = as_paragraph("VO", as_sub("2"), " (ml/min)"),
+    vo2_kg   = as_paragraph("VO", as_sub("2"), " (ml/kg/min)"),
+    x4mmol_w = as_paragraph("4 mmol", "\u00B7", "L", as_sup("-1"), " (W)")
+  )
+}
+
+for (i in seq_len(n_main)) {
+  ft <- compose(
+    ft, part = "body", i = i, j = "Maal",
+    value = make_row_label(tabell$Maal[i])
+  )
+}
+
+# ---- Undertekst-raden (ny rekkefølge, uten "Merk:") ----
+note_row <- n_main + 1
+ft <- merge_at(ft, i = note_row, j = 1:4, part = "body")
+
+ft <- compose(
+  ft, part = "body", i = note_row, j = "Maal",
+  value = as_paragraph(
+    "VO", as_sub("2"), " = maksimalt oksygenopptak. ",
+    "4 mmol", "\u00B7", "L", as_sup("-1"),
+    " (W) angir effekt ved laktatkonsentrasjon p\u00E5 4 mmol/L (terskelwatt). ",
+    "Verdier er oppgitt som gjennomsnitt (SD)."
+  )
+)
+
+ft <- align(ft, i = note_row, j = 1, align = "left", part = "body")
+ft <- fontsize(ft, i = note_row, j = 1, size = 9, part = "body")
+ft <- padding(ft, i = note_row, j = 1, padding.top = 6, part = "body")
+
+# Generell styling
+ft <- ft %>%
+  theme_vanilla() %>%
+  autofit() %>%
+  align(align = "center", part = "all") %>%
+  align(j = "Maal", align = "left", part = "all")
+
+ft
+```
+
+
+
 

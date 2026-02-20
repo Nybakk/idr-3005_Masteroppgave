@@ -19,11 +19,11 @@ book:
 bibliography: resources/bib-final.bib
 
 format:
-  html: default
+  html:
     mainfont: "Times New Roman"
-  pdf: default
+  pdf:
     mainfont: "Times New Roman"
-  docx: default
+  docx:
     reference-doc: reference-doc.docx 
     
   
