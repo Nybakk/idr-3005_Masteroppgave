@@ -8,7 +8,7 @@ editor_options:
   chunk_output_type: console
 bibliography: resources/bib-final.bib
 ---
-## Watt
+## Prestasjon
 
 ```{r}
 #| label: fig-box-meanwatt
@@ -42,7 +42,7 @@ watt_cols_idx <- 6:min(45, ncol(w))
 # Standardiser test (ASCII-trygt)
 test_raw <- tolower(trimws(as.character(w[[test_col_idx]])))
 test_std <- ifelse(grepl("^ap", test_raw), "Apne",
-                   ifelse(grepl("^bik", test_raw), "Bikarb",
+                   ifelse(grepl("^bik", test_raw), "Bikarbonat 2,5g/kg",
                           ifelse(grepl("^pla", test_raw), "Placebo", NA)))
 
 # Watt → numerisk
@@ -76,12 +76,160 @@ ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
 ```
 
 
+```{r}
+#| label: fig-1-abc-vertical-xall
+#| fig-cap: "Figur 1. Individ-linjer (stiplet, grå) og gjennomsnitt (heltrukket) for (a) Watt, (b) Hjertefrekvens (HF) og (c) Kadens (RPM) i Apné, Bikarbonat 2,5 g/kg og Placebo over 20 minutter."
+#| fig-width: 7.5
+#| fig-height: 9
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+library(dplyr)
+library(ggplot2)
+library(grid)   # <-- base R, alltid tilgjengelig
+
+# ---- Fil ----
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+if (!requireNamespace("openxlsx", quietly = TRUE)) {
+  stop("Installer 'openxlsx' (install.packages('openxlsx')).")
+}
+
+# ---- Excel kolonnebokstav -> indeks ----
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# ---- Les A:DV ----
+dv <- col_to_index("DV")
+df <- openxlsx::read.xlsx(path, cols = 1:dv)
+
+# ---- Struktur ----
+idx_id   <- 1L
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+idx_watt <- col_to_index("G"):col_to_index("AT")
+idx_hf   <- col_to_index("AU"):col_to_index("CH")
+idx_rpm  <- col_to_index("CI"):col_to_index("DV")
+
+stopifnot(length(idx_watt) == 40, length(idx_hf) == 40, length(idx_rpm) == 40)
+
+time_min <- seq(0, 19.5, by = 0.5)
+
+make_long <- function(idx, outcome) {
+  m_ap  <- as.matrix(df[rows_ap,  idx])
+  m_bik <- as.matrix(df[rows_bik, idx])
+  m_pla <- as.matrix(df[rows_pla, idx])
+
+  storage.mode(m_ap)  <- "numeric"
+  storage.mode(m_bik) <- "numeric"
+  storage.mode(m_pla) <- "numeric"
+
+  to_long <- function(m, cond, ids) {
+    data.frame(
+      outcome = outcome,
+      condition = cond,
+      id = rep(ids, each = length(time_min)),
+      time_min = rep(time_min, times = length(ids)),
+      value = as.vector(t(m))
+    )
+  }
+
+  bind_rows(
+    to_long(m_ap,  "Apne",    df[rows_ap,  idx_id][[1]]),
+    to_long(m_bik, "Bikarb",  df[rows_bik, idx_id][[1]]),
+    to_long(m_pla, "Placebo", df[rows_pla, idx_id][[1]])
+  )
+}
+
+dat <- bind_rows(
+  make_long(idx_watt, "a  Watt"),
+  make_long(idx_hf,   "b  HF"),
+  make_long(idx_rpm,  "c  RPM")
+) %>% filter(is.finite(value))
+
+# ---- Etiketter ----
+lab_apne <- paste0("Apn", "\u00E9")
+lab_bik  <- "Bikarbonat 2,5 g/kg"
+lab_pla  <- "Placebo"
+
+dat <- dat %>%
+  mutate(
+    condition_lbl = recode(condition,
+                           Apne = lab_apne,
+                           Bikarb = lab_bik,
+                           Placebo = lab_pla),
+    outcome = factor(outcome, levels = c("a  Watt", "b  HF", "c  RPM"))
+  )
+
+mean_df <- dat %>%
+  group_by(outcome, condition_lbl, time_min) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# ---- Felles x-skala ----
+x_scale <- scale_x_continuous(
+  limits = c(0, 20),
+  breaks = seq(0, 20, by = 5),
+  name = "Tid (min)"
+)
+
+make_panel <- function(outcome_name, ylab_txt, show_legend = FALSE) {
+  d <- dat %>% filter(outcome == outcome_name)
+  m <- mean_df %>% filter(outcome == outcome_name)
+
+  ggplot() +
+    geom_line(
+      data = d,
+      aes(x = time_min, y = value, group = interaction(condition_lbl, id)),
+      linetype = "dashed", color = "grey60",
+      linewidth = 0.35, alpha = 0.4
+    ) +
+    geom_line(
+      data = m,
+      aes(x = time_min, y = mean_value, color = condition_lbl),
+      linewidth = 1.2
+    ) +
+    x_scale +
+    labs(y = ylab_txt, color = NULL) +
+    theme_classic(base_size = 12) +
+    theme(legend.position = if (show_legend) "bottom" else "none")
+}
+
+pA <- make_panel("a  Watt", "Watt (W)", FALSE)
+pB <- make_panel("b  HF",   "HF (bpm)", FALSE)
+pC <- make_panel("c  RPM",  "RPM", TRUE)
+
+# ---- Base R grid-layout: én samlet figur ----
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(3, 1)))
+
+print(pA, vp = viewport(layout.pos.row = 1, layout.pos.col = 1))
+print(pB, vp = viewport(layout.pos.row = 2, layout.pos.col = 1))
+print(pC, vp = viewport(layout.pos.row = 3, layout.pos.col = 1))
+```
+
+
+
+
+
+
+## Blodanalyse
+
+
+### Laktat 
 
 ```{r}
-#| label: fig-mean-watt
-#| fig-cap: "Gjennomsnittswatt over tid for Apne, Bikarb og Placebo."
-#| fig-width: 7
-#| fig-height: 4.5
+#| label: fig-laktat-slope-panels
+#| fig-cap: "Slopegraph for laktat: individuelle målinger og gjennomsnitt ved 10 min og post for Apné, Bikarbonat 2,5 g/kg og Placebo (separate paneler)."
+#| fig-width: 7.2
+#| fig-height: 4.8
 #| echo: false
 #| message: false
 #| warning: false
@@ -90,53 +238,380 @@ ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
 library(dplyr)
 library(ggplot2)
 
-path <- file.path("Data", "Watt.xlsx")
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
 
-if (!file.exists(path)) stop("Finner ikke Data/Watt.xlsx under render. Sjekk at fila ligger i prosjektmappen /Data.")
+if (!requireNamespace("openxlsx", quietly = TRUE)) {
+  stop("Installer 'openxlsx' (install.packages('openxlsx')).")
+}
 
-# Les Excel (robust)
-w <- tryCatch(
-  readxl::read_xlsx(path),
-  error = function(e) {
-    if (requireNamespace("openxlsx", quietly = TRUE)) {
-      openxlsx::read.xlsx(path)
-    } else {
-      stop("readxl kunne ikke lese filen, og openxlsx er ikke installert. Installer en av dem.")
-    }
-  }
-)
+# Excel-kolonnebokstav -> indeks (AA, AB, ... DX)
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
 
-if (!is.data.frame(w) || ncol(w) < 6) stop("Excel ble lest, men ser ikke ut som forventet (må ha minst kolonner til F).")
+# Tving lesing minst til DX (så DW/DX alltid er med)
+dx <- col_to_index("DX")
+df <- openxlsx::read.xlsx(path, cols = 1:dx)
+if (!is.data.frame(df)) stop("Kunne ikke lese Excel som tabell.")
+if (ncol(df) < dx) stop("Innlesing ga færre kolonner enn DX. Sjekk at Data.xlsx har kolonner til DX.")
 
-test_col_idx <- 2
-watt_cols_idx <- 6:ncol(w)
-time_min_vec <- seq(0, by = 0.5, length.out = length(watt_cols_idx))
+# Struktur iht. din beskrivelse
+idx_id  <- 1L
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
 
-test_raw <- tolower(trimws(as.character(w[[test_col_idx]])))
-test_std <- ifelse(grepl("^ap", test_raw), "Apne",
-                   ifelse(grepl("^bik", test_raw), "Bikarb",
-                          ifelse(grepl("^pla", test_raw), "Placebo", NA)))
+# Laktat-kolonner (eksakt)
+col_10min <- col_to_index("DW")  # La.10min
+col_post  <- col_to_index("DX")  # La.post
 
-watt_mat <- as.data.frame(w[, watt_cols_idx])
-watt_mat[] <- lapply(watt_mat, function(x) suppressWarnings(as.numeric(x)))
+n <- nrow(df)
 
-long <- data.frame(
-  test = rep(test_std, each = length(watt_cols_idx)),
-  time_min = rep(time_min_vec, times = nrow(w)),
-  watt = as.vector(t(as.matrix(watt_mat)))
-)
-long <- long[!is.na(long$test), ]
+# Klipp rader hvis datasettet har færre rader enn forventet
+clip_rows <- function(r) r[r >= 1 & r <= n]
+rows_ap  <- clip_rows(rows_ap)
+rows_bik <- clip_rows(rows_bik)
+rows_pla <- clip_rows(rows_pla)
 
-mean_watt <- long %>%
-  group_by(test, time_min) %>%
-  summarise(mean_watt = mean(watt, na.rm = TRUE), .groups = "drop")
+if (length(rows_ap) == 0 || length(rows_bik) == 0 || length(rows_pla) == 0) {
+  stop("Radinndelingen (3–12, 13–22, 23–32) passer ikke til antall rader i arket.")
+}
 
-p <- ggplot(mean_watt, aes(x = time_min, y = mean_watt, color = test)) +
-  geom_line(linewidth = 1) +
-  scale_x_continuous(breaks = seq(0, max(time_min_vec), by = 2)) +
-  labs(x = "Tid (min)", y = "Gjennomsnittswatt", color = NULL) +
-  theme_minimal(base_size = 12)
+# Unicode-trygge etiketter
+lab_apne <- paste0("Apn", "\u00E9")
+lab_bik  <- "Bikarbonat 2,5 g/kg"
+lab_pla  <- "Placebo"
 
-p
+make_block <- function(rows, protocol_lbl) {
+  data.frame(
+    id = as.character(df[rows, idx_id, drop = TRUE]),
+    protocol_lbl = protocol_lbl,
+    la_10min = suppressWarnings(as.numeric(df[rows, col_10min, drop = TRUE])),
+    la_post  = suppressWarnings(as.numeric(df[rows, col_post,  drop = TRUE]))
+  )
+}
 
+dat <- bind_rows(
+  make_block(rows_ap,  lab_apne),
+  make_block(rows_bik, lab_bik),
+  make_block(rows_pla, lab_pla)
+) %>%
+  mutate(
+    id = ifelse(is.na(id) | trimws(id) == "", as.character(row_number()), id),
+    protocol_lbl = factor(protocol_lbl, levels = c(lab_apne, lab_bik, lab_pla))
+  )
+
+# Long-format (10 min og post)
+long <- bind_rows(
+  dat %>% transmute(id, protocol_lbl, time = "10 min", value = la_10min),
+  dat %>% transmute(id, protocol_lbl, time = "Post",   value = la_post)
+) %>%
+  filter(is.finite(value)) %>%
+  mutate(time = factor(time, levels = c("10 min", "Post")))
+
+means <- long %>%
+  group_by(protocol_lbl, time) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# Plot: tre paneler (ett per protokoll), individ (tynn) + mean (tykk)
+ggplot() +
+  geom_line(
+    data = long,
+    aes(x = time, y = value, group = id),
+    linewidth = 0.6, alpha = 0.45
+  ) +
+  geom_point(
+    data = long,
+    aes(x = time, y = value),
+    size = 1.8, alpha = 0.45
+  ) +
+  geom_line(
+    data = means,
+    aes(x = time, y = mean_value, group = 1),
+    linewidth = 1.4
+  ) +
+  geom_point(
+    data = means,
+    aes(x = time, y = mean_value),
+    size = 3.2
+  ) +
+  facet_wrap(~ protocol_lbl, nrow = 1) +
+  labs(x = NULL, y = "Laktat (mmol/L)") +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "none",
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
 ```
+
+
+
+
+
+### pH i blodet
+
+```{r}
+#| label: fig-ph-slope-panels
+#| fig-cap: "Slopegraph for pH: individuelle målinger og gjennomsnitt ved baseline, pre, 10 min og post for Apné, Bikarbonat 2,5 g/kg og Placebo (separate paneler)."
+#| fig-width: 7.8
+#| fig-height: 4.8
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+library(dplyr)
+library(ggplot2)
+
+# ---- Fil ----
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+if (!requireNamespace("openxlsx", quietly = TRUE)) {
+  stop("Installer 'openxlsx' (install.packages('openxlsx')).")
+}
+
+# ---- Excel kolonnebokstav -> indeks ----
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# ---- Les arket helt til EB ----
+eb <- col_to_index("EB")
+df <- openxlsx::read.xlsx(path, cols = 1:eb)
+if (!is.data.frame(df)) stop("Kunne ikke lese Excel som tabell.")
+
+# ---- Riktig radinndeling (bekreftet tidligere) ----
+idx_id   <- 1L
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+n <- nrow(df)
+clip_rows <- function(r) r[r >= 1 & r <= n]
+rows_ap  <- clip_rows(rows_ap)
+rows_bik <- clip_rows(rows_bik)
+rows_pla <- clip_rows(rows_pla)
+
+# ---- pH-kolonner (eksakt) ----
+col_baseline <- col_to_index("DY")  # pH.baseline
+col_pre      <- col_to_index("DZ")  # pH.pre
+col_10min    <- col_to_index("EA")  # pH.10min
+col_post     <- col_to_index("EB")  # pH.post
+
+# ---- Etiketter ----
+lab_apne <- paste0("Apn", "\u00E9")
+lab_bik  <- "Bikarbonat 2,5 g/kg"
+lab_pla  <- "Placebo"
+
+make_block <- function(rows, protocol_lbl) {
+  data.frame(
+    id = as.character(df[rows, idx_id, drop = TRUE]),
+    protocol_lbl = protocol_lbl,
+    ph_baseline = suppressWarnings(as.numeric(df[rows, col_baseline, drop = TRUE])),
+    ph_pre      = suppressWarnings(as.numeric(df[rows, col_pre,      drop = TRUE])),
+    ph_10min    = suppressWarnings(as.numeric(df[rows, col_10min,    drop = TRUE])),
+    ph_post     = suppressWarnings(as.numeric(df[rows, col_post,     drop = TRUE]))
+  )
+}
+
+dat <- bind_rows(
+  make_block(rows_ap,  lab_apne),
+  make_block(rows_bik, lab_bik),
+  make_block(rows_pla, lab_pla)
+) %>%
+  mutate(
+    id = ifelse(is.na(id) | trimws(id) == "", as.character(row_number()), id),
+    protocol_lbl = factor(protocol_lbl, levels = c(lab_apne, lab_bik, lab_pla))
+  )
+
+# ---- Long-format (4 tidspunkt) ----
+long <- bind_rows(
+  dat %>% transmute(id, protocol_lbl, time = "Baseline", value = ph_baseline),
+  dat %>% transmute(id, protocol_lbl, time = "Pre",      value = ph_pre),
+  dat %>% transmute(id, protocol_lbl, time = "10 min",   value = ph_10min),
+  dat %>% transmute(id, protocol_lbl, time = "Post",     value = ph_post)
+) %>%
+  filter(is.finite(value)) %>%
+  mutate(time = factor(time, levels = c("Baseline", "Pre", "10 min", "Post")))
+
+# ---- Gjennomsnitt ----
+means <- long %>%
+  group_by(protocol_lbl, time) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# ---- Plot ----
+ggplot() +
+  # Individlinjer
+  geom_line(
+    data = long,
+    aes(x = time, y = value, group = id),
+    linewidth = 0.6,
+    alpha = 0.45
+  ) +
+  geom_point(
+    data = long,
+    aes(x = time, y = value),
+    size = 1.7,
+    alpha = 0.45
+  ) +
+  # Gjennomsnitt
+  geom_line(
+    data = means,
+    aes(x = time, y = mean_value, group = 1),
+    linewidth = 1.4
+  ) +
+  geom_point(
+    data = means,
+    aes(x = time, y = mean_value),
+    size = 3.2
+  ) +
+  facet_wrap(~ protocol_lbl, nrow = 1) +
+  labs(x = NULL, y = "pH") +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "none",
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+```
+
+
+
+### Hb-konsentrasjon
+
+```{r}
+#| label: fig-hb-slope-panels
+#| fig-cap: "Slopegraph for Hb-konsentrasjon: individuelle målinger og gjennomsnitt ved baseline, pre, 10 min og post for Apné, Bikarbonat 2,5 g/kg og Placebo (separate paneler)."
+#| fig-width: 7.8
+#| fig-height: 4.8
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+library(dplyr)
+library(ggplot2)
+
+# ---- Fil ----
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+if (!requireNamespace("openxlsx", quietly = TRUE)) {
+  stop("Installer 'openxlsx' (install.packages('openxlsx')).")
+}
+
+# ---- Excel kolonnebokstav -> indeks ----
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# ---- Les arket helt til EF ----
+ef <- col_to_index("EF")
+df <- openxlsx::read.xlsx(path, cols = 1:ef)
+if (!is.data.frame(df)) stop("Kunne ikke lese Excel som tabell.")
+
+# ---- Riktig radinndeling (bekreftet tidligere) ----
+idx_id   <- 1L
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+n <- nrow(df)
+clip_rows <- function(r) r[r >= 1 & r <= n]
+rows_ap  <- clip_rows(rows_ap)
+rows_bik <- clip_rows(rows_bik)
+rows_pla <- clip_rows(rows_pla)
+
+# ---- Hb-kolonner (eksakt) ----
+col_baseline <- col_to_index("EC")  # Hb.baseline
+col_pre      <- col_to_index("ED")  # Hb.pre
+col_10min    <- col_to_index("EE")  # Hb.10min
+col_post     <- col_to_index("EF")  # Hb.post
+
+# ---- Etiketter ----
+lab_apne <- paste0("Apn", "\u00E9")
+lab_bik  <- "Bikarbonat 2,5 g/kg"
+lab_pla  <- "Placebo"
+
+make_block <- function(rows, protocol_lbl) {
+  data.frame(
+    id = as.character(df[rows, idx_id, drop = TRUE]),
+    protocol_lbl = protocol_lbl,
+    hb_baseline = suppressWarnings(as.numeric(df[rows, col_baseline, drop = TRUE])),
+    hb_pre      = suppressWarnings(as.numeric(df[rows, col_pre,      drop = TRUE])),
+    hb_10min    = suppressWarnings(as.numeric(df[rows, col_10min,    drop = TRUE])),
+    hb_post     = suppressWarnings(as.numeric(df[rows, col_post,     drop = TRUE]))
+  )
+}
+
+dat <- bind_rows(
+  make_block(rows_ap,  lab_apne),
+  make_block(rows_bik, lab_bik),
+  make_block(rows_pla, lab_pla)
+) %>%
+  mutate(
+    id = ifelse(is.na(id) | trimws(id) == "", as.character(row_number()), id),
+    protocol_lbl = factor(protocol_lbl, levels = c(lab_apne, lab_bik, lab_pla))
+  )
+
+# ---- Long-format (4 tidspunkt) ----
+long <- bind_rows(
+  dat %>% transmute(id, protocol_lbl, time = "Baseline", value = hb_baseline),
+  dat %>% transmute(id, protocol_lbl, time = "Pre",      value = hb_pre),
+  dat %>% transmute(id, protocol_lbl, time = "10 min",   value = hb_10min),
+  dat %>% transmute(id, protocol_lbl, time = "Post",     value = hb_post)
+) %>%
+  filter(is.finite(value)) %>%
+  mutate(time = factor(time, levels = c("Baseline", "Pre", "10 min", "Post")))
+
+# ---- Gjennomsnitt ----
+means <- long %>%
+  group_by(protocol_lbl, time) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# ---- Plot ----
+ggplot() +
+  geom_line(
+    data = long,
+    aes(x = time, y = value, group = id),
+    linewidth = 0.6,
+    alpha = 0.45
+  ) +
+  geom_point(
+    data = long,
+    aes(x = time, y = value),
+    size = 1.7,
+    alpha = 0.45
+  ) +
+  geom_line(
+    data = means,
+    aes(x = time, y = mean_value, group = 1),
+    linewidth = 1.4
+  ) +
+  geom_point(
+    data = means,
+    aes(x = time, y = mean_value),
+    size = 3.2
+  ) +
+  facet_wrap(~ protocol_lbl, nrow = 1) +
+  labs(x = NULL, y = "Hb-konsentrasjon") +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "none",
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+```
+
+
+
+
