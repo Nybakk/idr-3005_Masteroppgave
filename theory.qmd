@@ -1,5 +1,5 @@
 ---
-title: "theory"
+title: "Teori"
 format: html
 ---
 

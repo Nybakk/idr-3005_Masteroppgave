@@ -178,5 +178,17 @@ ft
 ```
 
 
+## Studie design
 
+
+## Testprotokoll
+
+
+## Blodanalyse
+
+### Laktat
+
+### pH-verdi i blodet
+
+### Hemoglobinkonsentrasjon
 

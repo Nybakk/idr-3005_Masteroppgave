@@ -1,5 +1,19 @@
 ---
-title: "Table of contents"
-format: html
+title: ""
+toc: true
+format:
+  docx:
+    title-block-style: none
 ---
 
+# Anerkjennelser {.unnumbered .unlisted}
+
+Tekst…
+
+\newpage
+
+# Sammendrag {.unnumbered .unlisted}
+
+Tekst…
+
+\newpage

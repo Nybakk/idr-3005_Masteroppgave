@@ -6,8 +6,6 @@ book:
   author: "Anders Nybakk"
   date: "15.05.2026"
   chapters: 
-    - acknowledgements.qmd
-    - abstract.qmd
     - index.qmd
     - theory.qmd
     - introduction.qmd

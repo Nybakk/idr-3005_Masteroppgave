@@ -2,7 +2,7 @@
 title: "koder"
 format: html
 ---
-
+tidsline watt:
 ```{r}
 #| label: fig-mean-watt
 #| fig-cap: "Gjennomsnittswatt over tid for Apne, Bikarb og Placebo."
@@ -64,6 +64,84 @@ p <- ggplot(mean_watt, aes(x = time_min, y = mean_watt, color = test)) +
   theme_minimal(base_size = 12)
 
 p
+
+```
+
+
+Leneær Mixed-model- test watt
+```{r}
+#| label: lmm-watt
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+# Pakker for mixed model
+if (!requireNamespace("lme4", quietly = TRUE)) stop("Installer 'lme4' (install.packages('lme4')).")
+if (!requireNamespace("lmerTest", quietly = TRUE)) stop("Installer 'lmerTest' (install.packages('lmerTest')).")
+
+library(lme4)
+library(lmerTest)
+
+# --- Hjelper: Excel-kolonnebokstav -> indeks ---
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# --- Les data ---
+path <- file.path("data", "Data.xlsx")
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx'.")
+dv <- col_to_index("DV")
+dat_raw <- openxlsx::read.xlsx(path, cols = 1:dv)
+
+# --- Riktig radinndeling (subheader-rad) ---
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+# --- ID i kolonne B (som du sa), protokoll står i kolonne C men vi bruker radblokker her ---
+idx_id <- 2L
+
+# --- Wattkolonner G:AT (40 punkt) ---
+watt_idx <- col_to_index("G"):col_to_index("AT")
+stopifnot(length(watt_idx) == 40)
+
+# --- Tid (min) ---
+time_min <- seq(0, 19.5, by = 0.5)
+
+make_long_watt <- function(rows, protocol_label) {
+  m <- as.matrix(dat_raw[rows, watt_idx, drop = FALSE])
+  storage.mode(m) <- "numeric"
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+
+  data.frame(
+    id = rep(ids, each = length(time_min)),
+    protocol = protocol_label,
+    time_min = rep(time_min, times = length(ids)),
+    watt = as.vector(t(m))
+  )
+}
+
+watt_ts <- bind_rows(
+  make_long_watt(rows_ap,  "Apne"),
+  make_long_watt(rows_bik, "Bikarb"),
+  make_long_watt(rows_pla, "Placebo")
+) %>%
+  filter(is.finite(watt)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# --- Modell 1: random intercept + random slope for tid (mest komplett) ---
+m1 <- lmer(watt ~ protocol * time_min + (1 + time_min | id), data = watt_ts, REML = FALSE)
+
+summary(m1)
+anova(m1)   # Type I tester (greit som start)
+
 
 ```
 
