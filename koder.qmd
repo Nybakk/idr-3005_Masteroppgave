@@ -144,4 +144,290 @@ anova(m1)   # Type I tester (greit som start)
 
 
 ```
+boksdiagramm uten SD
+```{r}
+#| label: fig-box-meanwatt2
+#| fig-cap: "Boksdiagram av gjennomsnittswatt per deltaker. Boks = median/IQR. Diamant og tynn tverrstrek = gjennomsnitt. Tall angir gjennomsnittswatt."
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+library(dplyr)
+library(ggplot2)
+
+path <- file.path("Data", "Watt.xlsx")
+if (!file.exists(path)) stop("Finner ikke Data/Watt.xlsx under render.")
+
+w <- tryCatch(
+  readxl::read_xlsx(path),
+  error = function(e1) {
+    if (requireNamespace("openxlsx", quietly = TRUE)) openxlsx::read.xlsx(path) else stop(e1)
+  }
+)
+
+# Kolonne B = test
+test_col_idx <- 2
+
+# Kolonne F:AS = watt (6:45)
+watt_cols_idx <- 6:min(45, ncol(w))
+
+# Standardiser test (ASCII-trygt)
+test_raw <- tolower(trimws(as.character(w[[test_col_idx]])))
+test_std <- ifelse(grepl("^ap", test_raw), "Apne",
+                   ifelse(grepl("^bik", test_raw), "Bikarbonat 2,5g/kg",
+                          ifelse(grepl("^pla", test_raw), "Placebo", NA)))
+
+# Watt → numerisk
+watt_mat <- as.data.frame(w[, watt_cols_idx])
+watt_mat[] <- lapply(watt_mat, function(x) suppressWarnings(as.numeric(x)))
+
+# Gjennomsnitt per deltaker
+mean_per_subject <- data.frame(
+  test = test_std,
+  mean_watt = rowMeans(as.matrix(watt_mat), na.rm = TRUE)
+) %>%
+  filter(!is.na(test))
+
+# Plot
+ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
+  geom_boxplot(outlier.shape = NA, linewidth = 0.8) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, linewidth = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+  stat_summary(
+    fun = mean,
+    geom = "text",
+    aes(label = sprintf("%.1f W", after_stat(y))),
+    vjust = -0.8,
+    size = 3.5,
+    show.legend = FALSE
+  ) +
+  geom_jitter(width = 0.12, height = 0, alpha = 0.6) +
+  labs(x = NULL, y = "Gjennomsnittswatt", color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+
+tabell la, ph og hb
+
+
+```{r}
+#| label: tbl-blod
+#| tbl-cap: "Laktat, pH og Hb-konsentrasjon"
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+library(tidyr)
+library(flextable)
+library(officer)
+library(stringi)
+
+# ---------- hard sanitizer ----------
+fix_text <- function(x) {
+  x <- as.character(x)
+  x <- stringi::stri_enc_toutf8(x, is_unknown_8bit = TRUE)
+  x <- iconv(x, from = 'UTF-8', to = 'UTF-8', sub = '')
+  x[is.na(x)] <- ''
+  x <- gsub('[\t\r\n]+', ' ', x, perl = TRUE)
+  x <- gsub('[[:cntrl:]]+', '', x, perl = TRUE)
+  trimws(x)
+}
+
+# ---- Sjekk at objektene finnes ----
+if (!exists('lac_long')) stop("Finner ikke objektet 'lac_long' (kjør laktat-chunken først).")
+if (!exists('ph_long'))  stop("Finner ikke objektet 'ph_long' (kjør pH-chunken først).")
+if (!exists('hb_long'))  stop("Finner ikke objektet 'hb_long' (kjør Hb-chunken først).")
+
+# ---------- interne protokollnavn (kun ASCII i koden) ----------
+norm_protocol <- function(x) {
+  x <- fix_text(x)
+  x_low <- tolower(x)
+  dplyr::case_when(
+    grepl('^ap',  x_low) ~ 'Apne',
+    grepl('^bik', x_low) ~ 'Bikarbonat',
+    grepl('^pla', x_low) ~ 'Placebo',
+    TRUE ~ x
+  )
+}
+
+# ---------- mean (SD) ----------
+fmt_mean_sd <- function(x, digits = 2) {
+  m <- mean(x, na.rm = TRUE)
+  s <- sd(x, na.rm = TRUE)
+  paste0(sprintf(paste0('%.', digits, 'f'), m),
+         ' (', sprintf(paste0('%.', digits, 'f'), s), ')')
+}
+
+time_levels <- c('Baseline', 'Pre', '10 min', 'Post')
+protocol_levels <- c('Apne', 'Bikarbonat', 'Placebo')
+
+# =========================
+# Laktat
+# =========================
+lac_sum <- lac_long %>%
+  transmute(
+    id       = fix_text(id),
+    protocol = norm_protocol(protocol),
+    time     = fix_text(time),
+    value    = suppressWarnings(as.numeric(value))
+  ) %>%
+  filter(is.finite(value)) %>%
+  mutate(
+    time = case_when(
+      grepl('10',   tolower(time)) ~ '10 min',
+      grepl('post', tolower(time)) ~ 'Post',
+      TRUE ~ time
+    ),
+    variable = 'Laktat'
+  ) %>%
+  summarise(stat = fmt_mean_sd(value, 2), .by = c(variable, time, protocol))
+
+# =========================
+# pH
+# =========================
+ph_sum <- ph_long %>%
+  transmute(
+    id       = fix_text(id),
+    protocol = norm_protocol(protocol),
+    time     = fix_text(time),
+    value    = suppressWarnings(as.numeric(ph))
+  ) %>%
+  filter(is.finite(value)) %>%
+  mutate(
+    time = case_when(
+      grepl('base', tolower(time)) ~ 'Baseline',
+      grepl('^pre$',tolower(time)) ~ 'Pre',
+      grepl('10',   tolower(time)) ~ '10 min',
+      grepl('post', tolower(time)) ~ 'Post',
+      TRUE ~ time
+    ),
+    variable = 'pH'
+  ) %>%
+  summarise(stat = fmt_mean_sd(value, 3), .by = c(variable, time, protocol))
+
+# =========================
+# Hb
+# =========================
+hb_sum <- hb_long %>%
+  transmute(
+    id       = fix_text(id),
+    protocol = norm_protocol(protocol),
+    time     = fix_text(time),
+    value    = suppressWarnings(as.numeric(hb))
+  ) %>%
+  filter(is.finite(value)) %>%
+  mutate(
+    time = case_when(
+      grepl('base', tolower(time)) ~ 'Baseline',
+      grepl('^pre$',tolower(time)) ~ 'Pre',
+      grepl('10',   tolower(time)) ~ '10 min',
+      grepl('post', tolower(time)) ~ 'Post',
+      TRUE ~ time
+    ),
+    variable = 'Hb'
+  ) %>%
+  summarise(stat = fmt_mean_sd(value, 2), .by = c(variable, time, protocol))
+
+# =========================
+# Samle og pivot
+# =========================
+tabell <- bind_rows(lac_sum, ph_sum, hb_sum) %>%
+  mutate(
+    variable = factor(variable, levels = c('Laktat', 'pH', 'Hb')),
+    time     = factor(time, levels = time_levels),
+    protocol = factor(protocol, levels = protocol_levels)
+  ) %>%
+  arrange(variable, time) %>%
+  mutate(Maal = paste0(as.character(variable), ' - ', as.character(time))) %>%  # ASCII i data
+  select(Maal, protocol, stat) %>%
+  pivot_wider(names_from = protocol, values_from = stat) %>%
+  mutate(across(where(is.character), fix_text))
+
+# ---- n per protokoll (fra pH som har alle tidspunkter) ----
+n_lookup <- ph_long %>%
+  transmute(id = fix_text(id), protocol = norm_protocol(protocol)) %>%
+  distinct() %>%
+  count(protocol, name = 'n')
+
+n_ap  <- n_lookup$n[n_lookup$protocol == 'Apne'][1]
+n_bik <- n_lookup$n[n_lookup$protocol == 'Bikarbonat'][1]
+n_pla <- n_lookup$n[n_lookup$protocol == 'Placebo'][1]
+
+# ---- note-rad ----
+n_main <- nrow(tabell)
+tabell <- bind_rows(
+  tabell,
+  tibble(Maal = 'NOTE', Apne = '', Bikarbonat = '', Placebo = '')
+)
+
+# =========================
+# flextable
+# =========================
+ft <- flextable(tabell)
+
+# Headerlabels: bruk ASCII her
+ft <- set_header_labels(
+  ft,
+  Maal       = 'Mal',
+  Apne       = paste0('Apne (n = ', n_ap, ')'),
+  Bikarbonat = paste0('Bikarbonat (n = ', n_bik, ')'),
+  Placebo    = paste0('Placebo (n = ', n_pla, ')')
+)
+
+# Compose header: sett inn Mål og Apné med unicode (trygt i Word)
+ft <- compose(ft, part = 'header', j = 'Maal',
+              value = as_paragraph('M', '\u00E5', 'l'))
+ft <- compose(ft, part = 'header', j = 'Apne',
+              value = as_paragraph('Apn', '\u00E9', ' (n = ', n_ap, ')'))
+
+# Radetiketter (kan bruke unicode her også, uten å skrive dem direkte)
+make_row_label <- function(x) {
+  # x f.eks: "Laktat - 10 min"
+  if (grepl('^Laktat', x)) {
+    tpart <- sub('^Laktat - ', '', x)
+    return(as_paragraph('Laktat (mmol', '\u00B7', 'L', as_sup('-1'), ') - ', tpart))
+  }
+  if (grepl('^pH', x)) {
+    return(as_paragraph('pH - ', sub('^pH - ', '', x)))
+  }
+  if (grepl('^Hb', x)) {
+    return(as_paragraph('Hb - ', sub('^Hb - ', '', x)))
+  }
+  as_paragraph(x)
+}
+
+for (i in seq_len(n_main)) {
+  ft <- compose(ft, part = 'body', i = i, j = 'Maal',
+                value = make_row_label(tabell$Maal[i]))
+}
+
+# Note nederst
+note_row <- n_main + 1
+ft <- merge_at(ft, i = note_row, j = 1:4, part = 'body')
+
+ft <- compose(
+  ft, part = 'body', i = note_row, j = 'Maal',
+  value = as_paragraph(
+    'Verdier er oppgitt som gjennomsnitt (SD). ',
+    'Laktat i mmol', '\u00B7', 'L', as_sup('-1'), '.'
+  )
+)
+
+ft <- align(ft, i = note_row, j = 1, align = 'left', part = 'body')
+ft <- fontsize(ft, i = note_row, j = 1, size = 9, part = 'body')
+ft <- padding(ft, i = note_row, j = 1, padding.top = 6, part = 'body')
+
+ft <- ft %>%
+  theme_vanilla() %>%
+  autofit() %>%
+  align(align = 'center', part = 'all') %>%
+  align(j = 'Maal', align = 'left', part = 'all')
+
+ft
+```
 

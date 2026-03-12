@@ -4,7 +4,7 @@ project:
 book: 
   title: "Akkutte effekter av apné og bikarbonat på sykkelprestasjon"
   author: "Anders Nybakk"
-  date: "15.05.2026"
+  date: "2026"
   chapters: 
     - index.qmd
     - theory.qmd

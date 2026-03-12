@@ -10,9 +10,11 @@ bibliography: resources/bib-final.bib
 ---
 ## Prestasjon
 
+Gjennomsnittswatten ved de tre behandlingene var 330,3 ± 63,3 W for apné, 336,1 ± 63,5 W for bikarbonat og 331,6 ± 62,3 W for placebo (se figur 4.1). Enveis ANOVA viste at dette var en signifikant forskjell (p = 0,042), men post hoc analyse med Holm-korrigering viste ingen parvise forskjeller mellom behandlingene (alle med p = > 0,05). Den lineære mixed modellen (LMM) viste ingen forskjell på startwatt for behandlingene, men fant en økning i watt over tid på alle tre behandlingene (p = < 0,001). Det var også en signifikant forskjell i denne wattøkningen over tid. Bikarbonat hadde en signifikant større økning i watt over tid enn de to andre protokollene (p = < 0,001), mens det var ingen forskjell mellom apné og placebo (se figur 4.2).
+
 ```{r}
 #| label: fig-box-meanwatt
-#| fig-cap: "Boksdiagram av gjennomsnittswatt per deltaker. Boks = median/IQR. Diamant og tynn tverrstrek = gjennomsnitt. Tall angir gjennomsnittswatt."
+#| fig-cap: "Boksdiagram av gjennomsnittswatt per deltaker. Boks = median/IQR. Diamant og tynn tverrstrek = gjennomsnitt. Tall angir gjennomsnitt ± SD."
 #| fig-width: 6.5
 #| fig-height: 4.5
 #| echo: false
@@ -36,16 +38,16 @@ w <- tryCatch(
 # Kolonne B = test
 test_col_idx <- 2
 
-# Kolonne F:AS = watt (6:45)
+# Kolonne F:AS = watt
 watt_cols_idx <- 6:min(45, ncol(w))
 
-# Standardiser test (ASCII-trygt)
+# Standardiser test
 test_raw <- tolower(trimws(as.character(w[[test_col_idx]])))
 test_std <- ifelse(grepl("^ap", test_raw), "Apne",
-                   ifelse(grepl("^bik", test_raw), "Bikarbonat 2,5g/kg",
+                   ifelse(grepl("^bik", test_raw), "Bikarb",
                           ifelse(grepl("^pla", test_raw), "Placebo", NA)))
 
-# Watt → numerisk
+# Watt -> numerisk
 watt_mat <- as.data.frame(w[, watt_cols_idx])
 watt_mat[] <- lapply(watt_mat, function(x) suppressWarnings(as.numeric(x)))
 
@@ -54,20 +56,33 @@ mean_per_subject <- data.frame(
   test = test_std,
   mean_watt = rowMeans(as.matrix(watt_mat), na.rm = TRUE)
 ) %>%
-  filter(!is.na(test))
+  filter(!is.na(test), is.finite(mean_watt))
+
+# Mean ± SD per test
+mean_sd_labels <- mean_per_subject %>%
+  group_by(test) %>%
+  summarise(
+    mean_val = mean(mean_watt, na.rm = TRUE),
+    sd_val = ifelse(sum(!is.na(mean_watt)) > 1,
+                    sd(mean_watt, na.rm = TRUE),
+                    0),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    label = sprintf("%.1f \u00B1 %.1f W", mean_val, sd_val)
+  )
 
 # Plot
 ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
   geom_boxplot(outlier.shape = NA, linewidth = 0.8) +
   stat_summary(fun = mean, geom = "crossbar", width = 0.5, linewidth = 0.6) +
   stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
-  stat_summary(
-    fun = mean,
-    geom = "text",
-    aes(label = sprintf("%.1f W", after_stat(y))),
+  geom_text(
+    data = mean_sd_labels,
+    aes(x = test, y = mean_val, label = label),
+    inherit.aes = FALSE,
     vjust = -0.8,
-    size = 3.5,
-    show.legend = FALSE
+    size = 3.5
   ) +
   geom_jitter(width = 0.12, height = 0, alpha = 0.6) +
   labs(x = NULL, y = "Gjennomsnittswatt", color = NULL) +
@@ -75,6 +90,7 @@ ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
   theme(legend.position = "none")
 ```
 
+Det var noen små forskjeller i hjertefrekvens (bpm) målt ved starten av testene (se figur 4.2). Apné hadde startpuls på 117,8 ± 16,8 bpm, bikarbonat 119,9 ± 15,0 bpm og placebo hadde 123,2 ± 9,8 bpm. Selv om apné hadde noe lavere startpuls var ingen signifikante forskjeller i hjertefrekvens mellom protokollene, eller nok til å kalle det en tendens (p = > 0,1). 
 
 ```{r}
 #| label: fig-1-abc-vertical-xall
@@ -215,6 +231,7 @@ print(pB, vp = viewport(layout.pos.row = 2, layout.pos.col = 1))
 print(pC, vp = viewport(layout.pos.row = 3, layout.pos.col = 1))
 ```
 
+Gjennomsnittlig kadens (rpm) var veldig lik for de tre behandlingene (apné: 90,3 ± 6,2 rpm, Bikarbonat: 91,9 ± 6,4 rpm og placebo: 91,4 ± 6,4 rpm), og det var ingen signifikante forskjeller som kom fram ved enveis ANOVA. I LMM kom det fram en signifikan forskjell i kadens over tid, hvor det ser ut til at deltakerne klarte å holde en mer stabil kadens gjennom testen med bikarbonatbehandling sammenlignet med apné og placebo (p = < 0,001). Mellom apné og placebo var det ingen tendens eller signifikante forskjeller (se figur 4.2).
 
 ```{r}
 #| label: prep-watt
@@ -380,9 +397,7 @@ print(pairwise.t.test(
 ```
 
 
-Det var en signifikant forskjell i gjennomsnittswatt mellom protokollene (repeated-measures ANOVA, p = 0.042). Post-hoc analyser med Holm-korrigering viste ingen signifikante parvise forskjeller mellom apné, bikarbonat og placebo (alle p > 0.05). 
 
-Selv om ingen enkeltvise sammenligninger var signifikante etter korreksjon (er lav styrke pga lavt deltakerantall?), indikerer hovedeffekten at protokollene samlet sett påvirket gjennomsnittswatt.
 
 
 
@@ -463,12 +478,6 @@ anova(m1)   # Type I tester (greit som start)
 
 
 ```
-
-Ingen forskjell på startwatt (p = 0.70), 
-
-Signifikant utvikling over tid (p < 0.001). 
-
-Signifikant interaksjon mellom protokoll og tid (p < 0.001), forskjellig mellom protokollene. Bikarbonat en brattere økning i watt over tid sammenlignet med apné, mens placebo ikke skilte seg fra apné.
 
 
 
@@ -557,7 +566,7 @@ print(pairwise.t.test(
 ))
 ```
 
-Det ble ikke observert noen signifikant forskjell i gjennomsnittlig hjertefrekvens mellom protokollene (p = 0.646). Parvise sammenligninger (paired t-tester med Holm-korreksjon) viste heller ingen signifikante forskjeller (alle p = 1.00)
+
 
 Leneær Mixed-model- test (HF)
 
@@ -645,7 +654,6 @@ print(anova(m_hf, type = 3))
 # anova(m_hf_simple, type = 3)
 ```
 
-Ingen signifikante forskjeller
 
 
 Kadens:
@@ -733,7 +741,7 @@ print(pairwise.t.test(
 ))
 ```
 
-Ingen signifikante forskjeller (p=0,395)
+
 
 Leneær Mixed-model- test (RPM)
 
@@ -825,7 +833,7 @@ print(anova(m_rpm, type = 3))
 # anova(m_rpm_simple, type = 3)
 ```
 
-Signifikant forskjell ved ulik protokoll på kadens (p = 0.002). Signifikant interaksjon mellom protokoll og tid (F(2,1180) = 15.80, p < 0.001). Ut fra denne testen ser det ut som at kadensen både var forskjellig mellom protokollene og utviklet seg ulikt over tid. Bikarbonat mer stabil kadens over tid sammenlignet med apné, mens placebo ikke skilte seg fra apné i tidsutvikling.
+
 
 
 
@@ -834,6 +842,135 @@ Signifikant forskjell ved ulik protokoll på kadens (p = 0.002). Signifikant int
 
 
 ### Laktat 
+
+Som tidligere nevnt ble det tatt laktatprøver ti minutter inn i prestasjonstestene og ett minutt etter gjennomført test. Ved målingen etter ti minutt var gjennomsnittlig laktat i de forskjellige behandlingene: apné 6,79 ± 0,71 mmol/L, bikarbonat 9,43 ± 1,67 mmol/L og placebo 7,70 ± 1,29 mmol/L (se tabell 4.1). Her var det signifikant høyere laktatnivå hos bikarbonat enn de to andre behandlingene (p = 0,001). Det var også en signifikant forskjell mellom apné og placebo (p = 0,022). 
+
+```{r}
+#| label: tbl-laktat
+#| tbl-cap: "Laktatkonsentrasjon"
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(flextable)
+library(officer)
+library(stringi)
+
+fix_text <- function(x) {
+  x <- as.character(x)
+  x <- stringi::stri_enc_toutf8(x, is_unknown_8bit = TRUE)
+  x <- iconv(x, from = "UTF-8", to = "UTF-8", sub = "")
+  x[is.na(x)] <- ""
+  x <- gsub("[\t\r\n]+", " ", x, perl = TRUE)
+  x <- gsub("[[:cntrl:]]+", "", x, perl = TRUE)
+  trimws(x)
+}
+
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+data_raw <- read_excel("data/Data.xlsx")
+
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+idx_id <- 2L
+
+col_10min <- col_to_index("DW")
+col_post  <- col_to_index("DX")
+
+make_block <- function(rows, protocol) {
+  data.frame(
+    id = fix_text(data_raw[[idx_id]][rows]),
+    protocol = protocol,
+    `10 min` = suppressWarnings(as.numeric(data_raw[[col_10min]][rows])),
+    Post = suppressWarnings(as.numeric(data_raw[[col_post]][rows]))
+  )
+}
+
+lac_df <- bind_rows(
+  make_block(rows_ap, "Apne"),
+  make_block(rows_bik, "Bikarbonat"),
+  make_block(rows_pla, "Placebo")
+)
+
+lac_long <- lac_df %>%
+  pivot_longer(-c(id, protocol), names_to = "time", values_to = "value")
+
+lac_tab <- lac_long %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    sd = sd(value, na.rm = TRUE),
+    .by = c(protocol, time)
+  ) %>%
+  mutate(stat = sprintf("%.2f (%.2f)", mean, sd)) %>%
+  select(protocol, time, stat) %>%
+  pivot_wider(names_from = protocol, values_from = stat)
+
+lac_tab <- lac_tab %>%
+  mutate(Maal = paste0("Laktat - ", time)) %>%
+  select(Maal, Apne, Bikarbonat, Placebo)
+
+n_main <- nrow(lac_tab)
+lac_tab <- bind_rows(
+  lac_tab,
+  tibble(Maal = "NOTE", Apne = "", Bikarbonat = "", Placebo = "")
+)
+
+ft <- flextable(lac_tab)
+
+ft <- set_header_labels(
+  ft,
+  Maal = "Mal",
+  Apne = "Apne",
+  Bikarbonat = "Bikarbonat",
+  Placebo = "Placebo"
+)
+
+ft <- compose(ft, part = "header", j = "Maal",
+              value = as_paragraph("M", "\u00E5", "l"))
+ft <- compose(ft, part = "header", j = "Apne",
+              value = as_paragraph("Apn", "\u00E9"))
+
+for (i in seq_len(n_main)) {
+  tpart <- sub("^Laktat - ", "", lac_tab$Maal[i])
+  ft <- compose(
+    ft, part = "body", i = i, j = "Maal",
+    value = as_paragraph("Laktat (mmol", "\u00B7", "L", as_sup("-1"), ") - ", tpart)
+  )
+}
+
+note_row <- n_main + 1
+ft <- merge_at(ft, i = note_row, j = 1:4, part = "body")
+
+ft <- compose(
+  ft, part = "body", i = note_row, j = "Maal",
+  value = as_paragraph(
+    "Verdier er oppgitt som gjennomsnitt (SD). ",
+    "Laktat i mmol", "\u00B7", "L", as_sup("-1"), "."
+  )
+)
+
+ft <- align(ft, i = note_row, j = 1, align = "left", part = "body")
+ft <- fontsize(ft, i = note_row, j = 1, size = 9, part = "body")
+ft <- padding(ft, i = note_row, j = 1, padding.top = 6, part = "body")
+
+ft <- ft %>%
+  theme_vanilla() %>%
+  autofit() %>%
+  align(align = "center", part = "all") %>%
+  align(j = "Maal", align = "left", part = "all")
+
+ft
+```
+
+Det var signifikant økning i laktat ved alle tre protokollene (p = < 0,001), og en signifikant stører økning i laktat ved bikarbonat enn ved apné og placebo (p = < 0,001) (se figur 4.3). Post hov med Holm-korrigering viste at det også var signifikante forskjeller i laktat mellom behandlingene ved post-målingen. Apne målte 10,15 ± 1,85, bikarbonat målte 14.52 ± 2,44 og placebo målte 10,86 ± 1,83 (se tabell 4.1). Størst signifikans var det mellom bikarbonat i forhold til de to andre behandlingene (p = < 1e-5), men det var også ved postmålingen signifikant lavere laktatverdier ved apne enn ved placebo (p = 0,028) 
 
 ```{r}
 #| label: fig-laktat-slope-panels
@@ -1058,25 +1195,144 @@ pvals <- sapply(levels(lac_long$protocol), function(pr) {
 print(p.adjust(pvals, method = "holm"))
 ```
 
-Blodlaktat ble analysert med en toveis repeated-measures ANOVA med protokoll og tid (10 min og post) som innen-subjekt-faktorer. Det ble funnet en signifikant effekt av protokoll (p < 0.001) og en signifikant effekt av tid (p < 0.001). Videre ble det observert en signifikant interaksjon mellom protokoll og tid < 0.001), som indikerer at endringen i laktat over tid var forskjellig mellom protokollene. Post-hoc analyser med Holm-korrigerte paired t-tester viste signifikante forskjeller mellom alle protokoller både ved 10 min og ved post, samt en signifikant økning i laktat fra 10 min til post innen alle protokoller.
 
-10 min: 
-
-apné vs bikarb (p=0,001)
-Apné vs Placebo (p = 0,022)
-Bikarb vs Placebo: (p=0,001)
-
-Post:
-Apné vs Bikarb (p < 1e−6)
-
-Apné vs Placebo (p = 0.028)
-
-Bikarb vs Placebo (p < 1e−5)
-
-Endring 10min --> post (p = <0,001)
 
 
 ### pH i blodet
+
+Når det gjelder pH-verdien i blodet var det signifikante fall i pH for alle behandlingene. Det var også signifikante forskjeller i utviklingen av pH gjennom prestasjonstestene med tanke på behandling (p = < 0,001). post hov analyse viser at bikarbonat hadde signifikant høyere pH-verdi ved alle fire målinger (Baseline: p = < 0,001, pre: p = < 0,001, 10 min: p = < 0,001, post: p = < 0,010), selv om utviklingen for alle tre behandlingene er parallelle (se figur 4.4). Det var ingen signifikante forskjeller mellom apné og placebo.
+
+```{r}
+#| label: tbl-ph
+#| tbl-cap: "pH"
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(flextable)
+library(officer)
+library(stringi)
+
+fix_text <- function(x) {
+  x <- as.character(x)
+  x <- stringi::stri_enc_toutf8(x, is_unknown_8bit = TRUE)
+  x <- iconv(x, from = "UTF-8", to = "UTF-8", sub = "")
+  x[is.na(x)] <- ""
+  x <- gsub("[\t\r\n]+", " ", x, perl = TRUE)
+  x <- gsub("[[:cntrl:]]+", "", x, perl = TRUE)
+  trimws(x)
+}
+
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+data_raw <- read_excel("data/Data.xlsx")
+
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+idx_id <- 2L
+
+ph_cols <- c(
+  Baseline = col_to_index("DY"),
+  Pre = col_to_index("DZ"),
+  `10 min` = col_to_index("EA"),
+  Post = col_to_index("EB")
+)
+
+make_block <- function(rows, protocol) {
+  data.frame(
+    id = fix_text(data_raw[[idx_id]][rows]),
+    protocol = protocol,
+    Baseline = suppressWarnings(as.numeric(data_raw[[ph_cols["Baseline"]]][rows])),
+    Pre = suppressWarnings(as.numeric(data_raw[[ph_cols["Pre"]]][rows])),
+    `10 min` = suppressWarnings(as.numeric(data_raw[[ph_cols["10 min"]]][rows])),
+    Post = suppressWarnings(as.numeric(data_raw[[ph_cols["Post"]]][rows]))
+  )
+}
+
+ph_df <- bind_rows(
+  make_block(rows_ap, "Apne"),
+  make_block(rows_bik, "Bikarbonat"),
+  make_block(rows_pla, "Placebo")
+)
+
+ph_long <- ph_df %>%
+  pivot_longer(-c(id, protocol), names_to = "time", values_to = "value")
+
+ph_tab <- ph_long %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    sd = sd(value, na.rm = TRUE),
+    .by = c(protocol, time)
+  ) %>%
+  mutate(stat = sprintf("%.3f (%.3f)", mean, sd)) %>%
+  select(protocol, time, stat) %>%
+  pivot_wider(names_from = protocol, values_from = stat)
+
+ph_tab <- ph_tab %>%
+  mutate(time = factor(time, levels = c("Baseline", "Pre", "10 min", "Post"))) %>%
+  arrange(time) %>%
+  mutate(Maal = paste0("pH - ", time)) %>%
+  select(Maal, Apne, Bikarbonat, Placebo)
+
+n_main <- nrow(ph_tab)
+ph_tab <- bind_rows(
+  ph_tab,
+  tibble(Maal = "NOTE", Apne = "", Bikarbonat = "", Placebo = "")
+)
+
+ft <- flextable(ph_tab)
+
+ft <- set_header_labels(
+  ft,
+  Maal = "Mal",
+  Apne = "Apne",
+  Bikarbonat = "Bikarbonat",
+  Placebo = "Placebo"
+)
+
+ft <- compose(ft, part = "header", j = "Maal",
+              value = as_paragraph("M", "\u00E5", "l"))
+ft <- compose(ft, part = "header", j = "Apne",
+              value = as_paragraph("Apn", "\u00E9"))
+
+for (i in seq_len(n_main)) {
+  tpart <- sub("^pH - ", "", ph_tab$Maal[i])
+  ft <- compose(
+    ft, part = "body", i = i, j = "Maal",
+    value = as_paragraph("pH - ", tpart)
+  )
+}
+
+note_row <- n_main + 1
+ft <- merge_at(ft, i = note_row, j = 1:4, part = "body")
+
+ft <- compose(
+  ft, part = "body", i = note_row, j = "Maal",
+  value = as_paragraph("Verdier er oppgitt som gjennomsnitt (SD).")
+)
+
+ft <- align(ft, i = note_row, j = 1, align = "left", part = "body")
+ft <- fontsize(ft, i = note_row, j = 1, size = 9, part = "body")
+ft <- padding(ft, i = note_row, j = 1, padding.top = 6, part = "body")
+
+ft <- ft %>%
+  theme_vanilla() %>%
+  autofit() %>%
+  align(align = "center", part = "all") %>%
+  align(j = "Maal", align = "left", part = "all")
+
+ft
+```
+
+Ettersom oppvarming og apné ble utført før pre-målingen er utviklingen fra baseline spennende. Her var det ikke signifikant fall i pH for bikarbonat (p = 0,33) eller for apné (p = 0,08). For apné er p-verdien lav nok til at vi kan kalle det en tendes til fall i pH, men altså ikke signifikant. For placebo derimot var det et signifikant fall fra baseline til pre (p = 0,003).
 
 ```{r}
 #| label: fig-ph-slope-panels
@@ -1332,31 +1588,144 @@ if (all(c("ph.Baseline", "ph.Pre") %in% names(delta_wide))) {
   ))
 }
 ```
-signifikant forskjell i pH (p = < 0,001)
-
-signifikant endring i pH gjennom testen (p = < 0,001)
-
-signigikante forskjeller i tidsutvikling mellom protokoller (p = < 0,001)
-
-Apné: ikke signifikant endring fra baseline til pre (oppvarming og apne i mellom) (p = 0,08)
-
-Bikarbonat 2,5 g/kg: Ingen endring fra baseline til pre (oppvarming mellom) (p = > 0,2)
-
-Placebo: Signifikant endring fra baceline til pre (p = < 0,01)
-
-Bikarbonatprotokollen viste høyere pH ved baseline sammenlignet med apné og placebo. Det ble ikke observert signifikante endringer i pH fra baseline til pre i apné- eller bikarbonatprotokollen, mens placebo viste et signifikant fall. Etter pre utviklet pH seg i hovedsak parallelt i de tre protokollene, med vedvarende høyere pH-nivå i bikarbonatprotokollen (p = ).
-
-Post: 
-
-Bikarbonat vs Apné: p < 0.001
-
-Bikarbonat vs Placebo: p < 0.01
-
-Apné vs Placebo: p = 0.74
-
 
 
 ### Hb-konsentrasjon
+
+Toveis repeated-measures ANOVA viste en signifikant forskjell på protokoll på Hb-konsentrasjon (P = 0,003)- Post hoc-analyse viste at Hb-konsentrasjon var høyere enn bikarbonat ved pre (p = 0,019) og post (p = 0,023), mens placebo hadde høyere Hb-konsentrasjon enn bikarbonat ved 10 min (p = 0,023). Her er det viktig å påpeke at både apné og placebo målte høyere Hb-konsentrasjonenn bikarbonat ved baseline – altså før apné-intervensjonen (se tabell 4.3). Forskjellene i Hb-konsentrasjons som beskrives over trenger derfor ikke å ha betydning selv om de er statistisk signifikante. 
+
+```{r}
+#| label: tbl-hb
+#| tbl-cap: "Hb-konsentrasjon"
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(flextable)
+library(officer)
+library(stringi)
+
+fix_text <- function(x) {
+  x <- as.character(x)
+  x <- stringi::stri_enc_toutf8(x, is_unknown_8bit = TRUE)
+  x <- iconv(x, from = "UTF-8", to = "UTF-8", sub = "")
+  x[is.na(x)] <- ""
+  x <- gsub("[\t\r\n]+", " ", x, perl = TRUE)
+  x <- gsub("[[:cntrl:]]+", "", x, perl = TRUE)
+  trimws(x)
+}
+
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+data_raw <- read_excel("data/Data.xlsx")
+
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+idx_id <- 2L
+
+hb_cols <- c(
+  Baseline = col_to_index("EC"),
+  Pre = col_to_index("ED"),
+  `10 min` = col_to_index("EE"),
+  Post = col_to_index("EF")
+)
+
+make_block <- function(rows, protocol) {
+  data.frame(
+    id = fix_text(data_raw[[idx_id]][rows]),
+    protocol = protocol,
+    Baseline = suppressWarnings(as.numeric(data_raw[[hb_cols["Baseline"]]][rows])),
+    Pre = suppressWarnings(as.numeric(data_raw[[hb_cols["Pre"]]][rows])),
+    `10 min` = suppressWarnings(as.numeric(data_raw[[hb_cols["10 min"]]][rows])),
+    Post = suppressWarnings(as.numeric(data_raw[[hb_cols["Post"]]][rows]))
+  )
+}
+
+hb_df <- bind_rows(
+  make_block(rows_ap, "Apne"),
+  make_block(rows_bik, "Bikarbonat"),
+  make_block(rows_pla, "Placebo")
+)
+
+hb_long <- hb_df %>%
+  pivot_longer(-c(id, protocol), names_to = "time", values_to = "value")
+
+hb_tab <- hb_long %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    sd = sd(value, na.rm = TRUE),
+    .by = c(protocol, time)
+  ) %>%
+  mutate(stat = sprintf("%.2f (%.2f)", mean, sd)) %>%
+  select(protocol, time, stat) %>%
+  pivot_wider(names_from = protocol, values_from = stat)
+
+hb_tab <- hb_tab %>%
+  mutate(time = factor(time, levels = c("Baseline", "Pre", "10 min", "Post"))) %>%
+  arrange(time) %>%
+  mutate(Maal = paste0("Hb - ", time)) %>%
+  select(Maal, Apne, Bikarbonat, Placebo)
+
+n_main <- nrow(hb_tab)
+hb_tab <- bind_rows(
+  hb_tab,
+  tibble(Maal = "NOTE", Apne = "", Bikarbonat = "", Placebo = "")
+)
+
+ft <- flextable(hb_tab)
+
+ft <- set_header_labels(
+  ft,
+  Maal = "Mal",
+  Apne = "Apne",
+  Bikarbonat = "Bikarbonat",
+  Placebo = "Placebo"
+)
+
+ft <- compose(ft, part = "header", j = "Maal",
+              value = as_paragraph("M", "\u00E5", "l"))
+ft <- compose(ft, part = "header", j = "Apne",
+              value = as_paragraph("Apn", "\u00E9"))
+
+for (i in seq_len(n_main)) {
+  tpart <- sub("^Hb - ", "", hb_tab$Maal[i])
+  ft <- compose(
+    ft, part = "body", i = i, j = "Maal",
+    value = as_paragraph("Hb - ", tpart)
+  )
+}
+
+note_row <- n_main + 1
+ft <- merge_at(ft, i = note_row, j = 1:4, part = "body")
+
+ft <- compose(
+  ft, part = "body", i = note_row, j = "Maal",
+  value = as_paragraph("Verdier er oppgitt som gjennomsnitt (SD).")
+)
+
+ft <- align(ft, i = note_row, j = 1, align = "left", part = "body")
+ft <- fontsize(ft, i = note_row, j = 1, size = 9, part = "body")
+ft <- padding(ft, i = note_row, j = 1, padding.top = 6, part = "body")
+
+ft <- ft %>%
+  theme_vanilla() %>%
+  autofit() %>%
+  align(align = "center", part = "all") %>%
+  align(j = "Maal", align = "left", part = "all")
+
+ft
+
+```
+
+Det var nemlig ikke signifikant endring i Hb-konsentrasjon fra baseline til pre ved apné (p = 0,75). Fra pre til 10 min var det en signifikant økning for placebo (p = 0,03), men placebo hadde både en nedgang i Hb-konsentrasjon mellom baseline og pre, og en mindre økning fra 10 min til post (se figur 4.5). Totalt sett gjennom hele testen (baseline – pre – 10 min – post) var det ingen signifikante forskjeller mellom de tre behandlingene (p = 0,20)
 
 ```{r}
 #| label: fig-hb-slope-panels
@@ -1631,248 +2000,7 @@ if (all(c("hb.Baseline", "hb.Pre") %in% names(delta_wide))) {
 ```
 
 
-Analyse: Toveis repeated-measures ANOVA med Post-hoc paired t-tester (Holm)
-
-
-🔹 Startnivå (baseline)
-
-Apné > Bikarb ≈ Placebo
-
-Protokolleffekt: p = 0.0028
-
-🔹 Baseline → pre
-
-Ingen signifikante endringer i noen protokoll
-
-Δ baseline → pre: alle p > 0.5
-
-🔹 Over tid
-
-Hoved­effekt av tid (p < 0.001)
-
-Ingen protokoll × tid-interaksjon (p ≈ 0.50)
-
-Tolkning:
-Hb er gjennomgående høyere i apné, men endrer seg parallelt i alle protokoller.
 
 
 
-Tabell:
-
-```{r}
-#| label: tbl-blod
-#| tbl-cap: "Laktat, pH og Hb-konsentrasjon"
-#| echo: false
-#| message: false
-#| warning: false
-
-library(dplyr)
-library(tidyr)
-library(flextable)
-library(officer)
-library(stringi)
-
-# ---------- hard sanitizer ----------
-fix_text <- function(x) {
-  x <- as.character(x)
-  x <- stringi::stri_enc_toutf8(x, is_unknown_8bit = TRUE)
-  x <- iconv(x, from = 'UTF-8', to = 'UTF-8', sub = '')
-  x[is.na(x)] <- ''
-  x <- gsub('[\t\r\n]+', ' ', x, perl = TRUE)
-  x <- gsub('[[:cntrl:]]+', '', x, perl = TRUE)
-  trimws(x)
-}
-
-# ---- Sjekk at objektene finnes ----
-if (!exists('lac_long')) stop("Finner ikke objektet 'lac_long' (kjør laktat-chunken først).")
-if (!exists('ph_long'))  stop("Finner ikke objektet 'ph_long' (kjør pH-chunken først).")
-if (!exists('hb_long'))  stop("Finner ikke objektet 'hb_long' (kjør Hb-chunken først).")
-
-# ---------- interne protokollnavn (kun ASCII i koden) ----------
-norm_protocol <- function(x) {
-  x <- fix_text(x)
-  x_low <- tolower(x)
-  dplyr::case_when(
-    grepl('^ap',  x_low) ~ 'Apne',
-    grepl('^bik', x_low) ~ 'Bikarbonat',
-    grepl('^pla', x_low) ~ 'Placebo',
-    TRUE ~ x
-  )
-}
-
-# ---------- mean (SD) ----------
-fmt_mean_sd <- function(x, digits = 2) {
-  m <- mean(x, na.rm = TRUE)
-  s <- sd(x, na.rm = TRUE)
-  paste0(sprintf(paste0('%.', digits, 'f'), m),
-         ' (', sprintf(paste0('%.', digits, 'f'), s), ')')
-}
-
-time_levels <- c('Baseline', 'Pre', '10 min', 'Post')
-protocol_levels <- c('Apne', 'Bikarbonat', 'Placebo')
-
-# =========================
-# Laktat
-# =========================
-lac_sum <- lac_long %>%
-  transmute(
-    id       = fix_text(id),
-    protocol = norm_protocol(protocol),
-    time     = fix_text(time),
-    value    = suppressWarnings(as.numeric(value))
-  ) %>%
-  filter(is.finite(value)) %>%
-  mutate(
-    time = case_when(
-      grepl('10',   tolower(time)) ~ '10 min',
-      grepl('post', tolower(time)) ~ 'Post',
-      TRUE ~ time
-    ),
-    variable = 'Laktat'
-  ) %>%
-  summarise(stat = fmt_mean_sd(value, 2), .by = c(variable, time, protocol))
-
-# =========================
-# pH
-# =========================
-ph_sum <- ph_long %>%
-  transmute(
-    id       = fix_text(id),
-    protocol = norm_protocol(protocol),
-    time     = fix_text(time),
-    value    = suppressWarnings(as.numeric(ph))
-  ) %>%
-  filter(is.finite(value)) %>%
-  mutate(
-    time = case_when(
-      grepl('base', tolower(time)) ~ 'Baseline',
-      grepl('^pre$',tolower(time)) ~ 'Pre',
-      grepl('10',   tolower(time)) ~ '10 min',
-      grepl('post', tolower(time)) ~ 'Post',
-      TRUE ~ time
-    ),
-    variable = 'pH'
-  ) %>%
-  summarise(stat = fmt_mean_sd(value, 3), .by = c(variable, time, protocol))
-
-# =========================
-# Hb
-# =========================
-hb_sum <- hb_long %>%
-  transmute(
-    id       = fix_text(id),
-    protocol = norm_protocol(protocol),
-    time     = fix_text(time),
-    value    = suppressWarnings(as.numeric(hb))
-  ) %>%
-  filter(is.finite(value)) %>%
-  mutate(
-    time = case_when(
-      grepl('base', tolower(time)) ~ 'Baseline',
-      grepl('^pre$',tolower(time)) ~ 'Pre',
-      grepl('10',   tolower(time)) ~ '10 min',
-      grepl('post', tolower(time)) ~ 'Post',
-      TRUE ~ time
-    ),
-    variable = 'Hb'
-  ) %>%
-  summarise(stat = fmt_mean_sd(value, 2), .by = c(variable, time, protocol))
-
-# =========================
-# Samle og pivot
-# =========================
-tabell <- bind_rows(lac_sum, ph_sum, hb_sum) %>%
-  mutate(
-    variable = factor(variable, levels = c('Laktat', 'pH', 'Hb')),
-    time     = factor(time, levels = time_levels),
-    protocol = factor(protocol, levels = protocol_levels)
-  ) %>%
-  arrange(variable, time) %>%
-  mutate(Maal = paste0(as.character(variable), ' - ', as.character(time))) %>%  # ASCII i data
-  select(Maal, protocol, stat) %>%
-  pivot_wider(names_from = protocol, values_from = stat) %>%
-  mutate(across(where(is.character), fix_text))
-
-# ---- n per protokoll (fra pH som har alle tidspunkter) ----
-n_lookup <- ph_long %>%
-  transmute(id = fix_text(id), protocol = norm_protocol(protocol)) %>%
-  distinct() %>%
-  count(protocol, name = 'n')
-
-n_ap  <- n_lookup$n[n_lookup$protocol == 'Apne'][1]
-n_bik <- n_lookup$n[n_lookup$protocol == 'Bikarbonat'][1]
-n_pla <- n_lookup$n[n_lookup$protocol == 'Placebo'][1]
-
-# ---- note-rad ----
-n_main <- nrow(tabell)
-tabell <- bind_rows(
-  tabell,
-  tibble(Maal = 'NOTE', Apne = '', Bikarbonat = '', Placebo = '')
-)
-
-# =========================
-# flextable
-# =========================
-ft <- flextable(tabell)
-
-# Headerlabels: bruk ASCII her
-ft <- set_header_labels(
-  ft,
-  Maal       = 'Mal',
-  Apne       = paste0('Apne (n = ', n_ap, ')'),
-  Bikarbonat = paste0('Bikarbonat (n = ', n_bik, ')'),
-  Placebo    = paste0('Placebo (n = ', n_pla, ')')
-)
-
-# Compose header: sett inn Mål og Apné med unicode (trygt i Word)
-ft <- compose(ft, part = 'header', j = 'Maal',
-              value = as_paragraph('M', '\u00E5', 'l'))
-ft <- compose(ft, part = 'header', j = 'Apne',
-              value = as_paragraph('Apn', '\u00E9', ' (n = ', n_ap, ')'))
-
-# Radetiketter (kan bruke unicode her også, uten å skrive dem direkte)
-make_row_label <- function(x) {
-  # x f.eks: "Laktat - 10 min"
-  if (grepl('^Laktat', x)) {
-    tpart <- sub('^Laktat - ', '', x)
-    return(as_paragraph('Laktat (mmol', '\u00B7', 'L', as_sup('-1'), ') - ', tpart))
-  }
-  if (grepl('^pH', x)) {
-    return(as_paragraph('pH - ', sub('^pH - ', '', x)))
-  }
-  if (grepl('^Hb', x)) {
-    return(as_paragraph('Hb - ', sub('^Hb - ', '', x)))
-  }
-  as_paragraph(x)
-}
-
-for (i in seq_len(n_main)) {
-  ft <- compose(ft, part = 'body', i = i, j = 'Maal',
-                value = make_row_label(tabell$Maal[i]))
-}
-
-# Note nederst
-note_row <- n_main + 1
-ft <- merge_at(ft, i = note_row, j = 1:4, part = 'body')
-
-ft <- compose(
-  ft, part = 'body', i = note_row, j = 'Maal',
-  value = as_paragraph(
-    'Verdier er oppgitt som gjennomsnitt (SD). ',
-    'Laktat i mmol', '\u00B7', 'L', as_sup('-1'), '.'
-  )
-)
-
-ft <- align(ft, i = note_row, j = 1, align = 'left', part = 'body')
-ft <- fontsize(ft, i = note_row, j = 1, size = 9, part = 'body')
-ft <- padding(ft, i = note_row, j = 1, padding.top = 6, part = 'body')
-
-ft <- ft %>%
-  theme_vanilla() %>%
-  autofit() %>%
-  align(align = 'center', part = 'all') %>%
-  align(j = 'Maal', align = 'left', part = 'all')
-
-ft
-```
 
