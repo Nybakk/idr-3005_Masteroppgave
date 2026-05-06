@@ -10,7 +10,6 @@ bibliography: resources/bib-final.bib
 ---
 ## Prestasjon
 
-Gjennomsnittswatten ved de tre behandlingene var 330,3 ± 63,3 W for apné, 336,1 ± 63,5 W for bikarbonat og 331,6 ± 62,3 W for placebo (se figur 4.1). Enveis ANOVA viste at dette var en signifikant forskjell (p = 0,042), men post hoc analyse med Holm-korrigering viste ingen parvise forskjeller mellom behandlingene (alle med p = > 0,05). Den lineære mixed modellen (LMM) viste ingen forskjell på startwatt for behandlingene, men fant en økning i watt over tid på alle tre behandlingene (p = < 0,001). Det var også en signifikant forskjell i denne wattøkningen over tid. Bikarbonat hadde en signifikant større økning i watt over tid enn de to andre protokollene (p = < 0,001), mens det var ingen forskjell mellom apné og placebo (se figur 4.2).
 
 ```{r}
 #| label: fig-box-meanwatt
@@ -85,12 +84,103 @@ ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
     size = 3.5
   ) +
   geom_jitter(width = 0.12, height = 0, alpha = 0.6) +
-  labs(x = NULL, y = "Gjennomsnittswatt", color = NULL) +
+  labs(x = NULL, y = "20-min gjennomsnittseffekt (W)", color = NULL) +
   theme_minimal(base_size = 12) +
   theme(legend.position = "none")
 ```
 
-Det var noen små forskjeller i hjertefrekvens (bpm) målt ved starten av testene (se figur 4.2). Apné hadde startpuls på 117,8 ± 16,8 bpm, bikarbonat 119,9 ± 15,0 bpm og placebo hadde 123,2 ± 9,8 bpm. Selv om apné hadde noe lavere startpuls var ingen signifikante forskjeller i hjertefrekvens mellom protokollene, eller nok til å kalle det en tendens (p = > 0,1). 
+```{r}
+#| label: fig-box-meanwatt2
+#| fig-cap: "Boksdiagram av gjennomsnittswatt per deltaker. Boks = median/IQR. Diamant og tynn tverrstrek = gjennomsnitt. Tall angir gjennomsnitt ± SD."
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+library(dplyr)
+library(ggplot2)
+
+path <- file.path("Data", "Watt.xlsx")
+if (!file.exists(path)) stop("Finner ikke Data/Watt.xlsx under render.")
+
+w <- tryCatch(
+  readxl::read_xlsx(path),
+  error = function(e1) {
+    if (requireNamespace("openxlsx", quietly = TRUE)) openxlsx::read.xlsx(path) else stop(e1)
+  }
+)
+
+# Kolonne B = test
+test_col_idx <- 2
+
+# Kolonne F:AS = watt
+watt_cols_idx <- 6:min(45, ncol(w))
+
+# Standardiser test
+test_raw <- tolower(trimws(as.character(w[[test_col_idx]])))
+test_std <- ifelse(grepl("^ap", test_raw), "Apne",
+                   ifelse(grepl("^bik", test_raw), "Bikarb",
+                          ifelse(grepl("^pla", test_raw), "Placebo", NA)))
+
+# Watt -> numerisk
+watt_mat <- as.data.frame(w[, watt_cols_idx])
+watt_mat[] <- lapply(watt_mat, function(x) suppressWarnings(as.numeric(x)))
+
+# Gjennomsnitt per deltaker
+mean_per_subject <- data.frame(
+  test = test_std,
+  mean_watt = rowMeans(as.matrix(watt_mat), na.rm = TRUE)
+) %>%
+  filter(!is.na(test), is.finite(mean_watt)) %>%
+  mutate(test = factor(test, levels = c("Apne", "Bikarb", "Placebo")))
+
+# Mean ± SD per test
+mean_sd_labels <- mean_per_subject %>%
+  group_by(test) %>%
+  summarise(
+    mean_val = mean(mean_watt, na.rm = TRUE),
+    sd_val = ifelse(sum(!is.na(mean_watt)) > 1,
+                    sd(mean_watt, na.rm = TRUE),
+                    0),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    label = sprintf("%.1f \u00B1 %.1f W", mean_val, sd_val)
+  )
+
+# Sett passende y-aksegrenser automatisk
+y_min <- floor(min(mean_per_subject$mean_watt, na.rm = TRUE) / 10) * 10 - 10
+y_max <- ceiling(max(mean_per_subject$mean_watt, na.rm = TRUE) / 10) * 10 + 15
+
+# Plot
+ggplot(mean_per_subject, aes(x = test, y = mean_watt, color = test)) +
+  geom_boxplot(outlier.shape = NA, linewidth = 0.8, width = 0.55) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.45, linewidth = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+  geom_text(
+    data = mean_sd_labels,
+    aes(x = test, y = mean_val, label = label),
+    inherit.aes = FALSE,
+    vjust = -0.8,
+    size = 3.5
+  ) +
+  geom_jitter(width = 0.10, height = 0, alpha = 0.6, size = 2) +
+  coord_cartesian(ylim = c(y_min, y_max)) +
+  labs(x = NULL, y = "20-min gjennomsnittseffekt (W)", color = NULL) +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "none",
+    axis.line.x = element_line(color = "black", linewidth = 0.8),
+    axis.line.y = element_line(color = "black", linewidth = 0.8),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black")
+  )
+```
+
+
+
 
 ```{r}
 #| label: fig-1-abc-vertical-xall
@@ -218,9 +308,9 @@ make_panel <- function(outcome_name, ylab_txt, show_legend = FALSE) {
     theme(legend.position = if (show_legend) "bottom" else "none")
 }
 
-pA <- make_panel("a  Watt", "Watt (W)", FALSE)
-pB <- make_panel("b  HF",   "HF (bpm)", FALSE)
-pC <- make_panel("c  RPM",  "RPM", TRUE)
+pA <- make_panel("a  Watt", "20-min gjennomsnittseffekt (W)", FALSE)
+pB <- make_panel("b  HF",   "HF (slag/min)", FALSE)
+pC <- make_panel("c  RPM",  "kadens (RPM)", TRUE)
 
 # ---- Base R grid-layout: én samlet figur ----
 grid.newpage()
@@ -231,7 +321,7 @@ print(pB, vp = viewport(layout.pos.row = 2, layout.pos.col = 1))
 print(pC, vp = viewport(layout.pos.row = 3, layout.pos.col = 1))
 ```
 
-Gjennomsnittlig kadens (rpm) var veldig lik for de tre behandlingene (apné: 90,3 ± 6,2 rpm, Bikarbonat: 91,9 ± 6,4 rpm og placebo: 91,4 ± 6,4 rpm), og det var ingen signifikante forskjeller som kom fram ved enveis ANOVA. I LMM kom det fram en signifikan forskjell i kadens over tid, hvor det ser ut til at deltakerne klarte å holde en mer stabil kadens gjennom testen med bikarbonatbehandling sammenlignet med apné og placebo (p = < 0,001). Mellom apné og placebo var det ingen tendens eller signifikante forskjeller (se figur 4.2).
+
 
 ```{r}
 #| label: prep-watt
@@ -396,7 +486,171 @@ print(pairwise.t.test(
 
 ```
 
+Med effect size:
 
+```{r}
+#| label: stats-watt2
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+library(tidyr)
+
+# Excel-kolonnebokstav -> indeks
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# ---- Les data ----
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx' (install.packages('openxlsx')).")
+
+dv <- col_to_index("DV")
+dat_raw <- openxlsx::read.xlsx(path, cols = 1:dv)
+
+# ---- Viktig: ID og protokoll-kolonner ----
+idx_id    <- 2L  # kolonne B
+idx_proto <- 3L  # kolonne C
+
+# Riktig radinndeling (subheader-rad i datasettet)
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+# Watt-kolonner
+watt_idx <- col_to_index("G"):col_to_index("AT")
+if (max(watt_idx) > ncol(dat_raw)) stop("Watt-kolonner (G:AT) finnes ikke i innlest data.")
+
+# Hjelper: lag mean-watt per deltaker for en blokk
+get_mean_watt <- function(rows, label) {
+  m <- as.matrix(dat_raw[rows, watt_idx, drop = FALSE])
+  storage.mode(m) <- "numeric"
+
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+  ids[is.na(ids) | trimws(ids) == ""] <- as.character(seq_len(length(rows)))[is.na(ids) | trimws(ids) == ""]
+
+  data.frame(
+    id = ids,
+    protocol = label,
+    mean_watt = rowMeans(m, na.rm = TRUE)
+  )
+}
+
+watt_long <- bind_rows(
+  get_mean_watt(rows_ap,  "Apne"),
+  get_mean_watt(rows_bik, "Bikarb"),
+  get_mean_watt(rows_pla, "Placebo")
+) %>%
+  filter(is.finite(mean_watt)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# ---- Sanity checks (vises i output) ----
+cat("\nAntall per protokoll:\n")
+print(table(watt_long$protocol))
+cat("\nAntall unike deltakere (id): ", nlevels(watt_long$id), "\n", sep = "")
+
+# ---- Repeated-measures ANOVA (standard output) ----
+anova_res <- aov(mean_watt ~ protocol + Error(id/protocol), data = watt_long)
+cat("\nRepeated-measures ANOVA:\n")
+print(summary(anova_res))
+
+# ---- Klargjør wide-format for effect size og post hoc ----
+watt_wide <- watt_long %>%
+  select(id, protocol, mean_watt) %>%
+  distinct() %>%
+  pivot_wider(names_from = protocol, values_from = mean_watt) %>%
+  filter(if_all(c(Apne, Bikarb, Placebo), is.finite))
+
+n_subj <- nrow(watt_wide)
+k_cond <- 3
+
+if (n_subj < 2) stop("For få komplette deltakere til repeated-measures ANOVA/effect size.")
+
+# ---- Manuell RM-ANOVA effect size: partial eta squared ----
+y_mat <- as.matrix(watt_wide[, c("Apne", "Bikarb", "Placebo")])
+
+grand_mean  <- mean(y_mat)
+cond_means  <- colMeans(y_mat)
+subj_means  <- rowMeans(y_mat)
+
+ss_total    <- sum((y_mat - grand_mean)^2)
+ss_protocol <- n_subj * sum((cond_means - grand_mean)^2)
+ss_subject  <- k_cond * sum((subj_means - grand_mean)^2)
+ss_error    <- ss_total - ss_protocol - ss_subject
+
+df_protocol <- k_cond - 1
+df_error    <- (n_subj - 1) * (k_cond - 1)
+
+ms_protocol <- ss_protocol / df_protocol
+ms_error    <- ss_error / df_error
+
+F_value <- ms_protocol / ms_error
+p_value <- pf(F_value, df1 = df_protocol, df2 = df_error, lower.tail = FALSE)
+
+partial_eta2 <- ss_protocol / (ss_protocol + ss_error)
+
+cat("\nANOVA med effect size:\n")
+cat(
+  sprintf(
+    "F(%d, %d) = %.3f, p = %.4f, partial eta squared (eta^2[p]) = %.3f\n",
+    df_protocol, df_error, F_value, p_value, partial_eta2
+  )
+)
+
+# ---- Post-hoc: paired t-test + Holm ----
+cat("\nPost-hoc (paired t-test, Holm-korreksjon):\n")
+print(pairwise.t.test(
+  x = watt_long$mean_watt,
+  g = watt_long$protocol,
+  paired = TRUE,
+  p.adjust.method = "holm"
+))
+
+# ---- Paired Cohen's dz ----
+cohens_dz <- function(x, y) {
+  ok <- is.finite(x) & is.finite(y)
+  x <- x[ok]
+  y <- y[ok]
+
+  if (length(x) < 2) return(NA_real_)
+
+  d <- x - y
+  sdd <- sd(d)
+
+  if (is.na(sdd) || sdd == 0) return(NA_real_)
+
+  mean(d) / sdd
+}
+
+interpret_d <- function(d) {
+  if (is.na(d)) return(NA_character_)
+  ad <- abs(d)
+  if (ad < 0.2) return("triviell")
+  if (ad < 0.5) return("liten")
+  if (ad < 0.8) return("moderat")
+  return("stor")
+}
+
+effect_sizes_posthoc <- data.frame(
+  comparison = c("Apne vs Bikarb", "Apne vs Placebo", "Bikarb vs Placebo"),
+  d_z = c(
+    cohens_dz(watt_wide$Apne,   watt_wide$Bikarb),
+    cohens_dz(watt_wide$Apne,   watt_wide$Placebo),
+    cohens_dz(watt_wide$Bikarb, watt_wide$Placebo)
+  )
+) %>%
+  mutate(magnitude = vapply(d_z, interpret_d, character(1)))
+
+cat("\nEffect size for post-hoc sammenligninger (paired Cohen's d_z):\n")
+print(effect_sizes_posthoc)
+```
 
 
 
@@ -479,6 +733,106 @@ anova(m1)   # Type I tester (greit som start)
 
 ```
 
+med effect size:
+
+```{r}
+#| label: lmm-watt2
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+# Pakker for mixed model
+if (!requireNamespace("lme4", quietly = TRUE)) stop("Installer 'lme4' (install.packages('lme4')).")
+if (!requireNamespace("lmerTest", quietly = TRUE)) stop("Installer 'lmerTest' (install.packages('lmerTest')).")
+if (!requireNamespace("effectsize", quietly = TRUE)) stop("Installer 'effectsize' (install.packages('effectsize')).")
+if (!requireNamespace("emmeans", quietly = TRUE)) stop("Installer 'emmeans' (install.packages('emmeans')).")
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx' (install.packages('openxlsx')).")
+
+library(lme4)
+library(lmerTest)
+library(effectsize)
+library(emmeans)
+
+# --- Hjelper: Excel-kolonnebokstav -> indeks ---
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# --- Les data ---
+path <- file.path("data", "Data.xlsx")
+dv <- col_to_index("DV")
+dat_raw <- openxlsx::read.xlsx(path, cols = 1:dv)
+
+# --- Riktig radinndeling (subheader-rad) ---
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+# --- ID i kolonne B ---
+idx_id <- 2L
+
+# --- Wattkolonner G:AT (40 punkt) ---
+watt_idx <- col_to_index("G"):col_to_index("AT")
+stopifnot(length(watt_idx) == 40)
+
+# --- Tid (min) ---
+time_min <- seq(0, 19.5, by = 0.5)
+
+make_long_watt <- function(rows, protocol_label) {
+  m <- as.matrix(dat_raw[rows, watt_idx, drop = FALSE])
+  storage.mode(m) <- "numeric"
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+
+  data.frame(
+    id = rep(ids, each = length(time_min)),
+    protocol = protocol_label,
+    time_min = rep(time_min, times = length(ids)),
+    watt = as.vector(t(m))
+  )
+}
+
+watt_ts <- bind_rows(
+  make_long_watt(rows_ap,  "Apne"),
+  make_long_watt(rows_bik, "Bikarb"),
+  make_long_watt(rows_pla, "Placebo")
+) %>%
+  filter(is.finite(watt)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# --- Modell: random intercept + random slope ---
+m1 <- lmer(watt ~ protocol * time_min + (1 + time_min | id), data = watt_ts, REML = FALSE)
+
+# --- Resultater ---
+summary(m1)
+
+anova_m1 <- anova(m1)
+anova_m1
+
+# --- Effect size (partial eta squared) ---
+eta_squared(anova_m1, partial = TRUE)
+
+# --- Standardiserte koeffisienter ---
+standardize_parameters(m1, method = "refit")
+
+# --- Parvise forskjeller i utvikling over tid (slope) ---
+emm_slope <- emtrends(m1, ~ protocol, var = "time_min")
+
+pairs(emm_slope, adjust = "holm")
+
+# --- Effect size for parvise forskjeller (Cohen's d) ---
+eff_size(
+  emm_slope,
+  sigma = sigma(m1),
+  edf = df.residual(m1)
+)
+```
 
 
 Hjertefrekvens:
@@ -654,6 +1008,260 @@ print(anova(m_hf, type = 3))
 # anova(m_hf_simple, type = 3)
 ```
 
+med ES:
+
+```{r}
+#| label: lmm-hf2
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+if (!requireNamespace("lme4", quietly = TRUE)) stop("Installer 'lme4'")
+if (!requireNamespace("lmerTest", quietly = TRUE)) stop("Installer 'lmerTest'")
+if (!requireNamespace("effectsize", quietly = TRUE)) stop("Installer 'effectsize'")
+if (!requireNamespace("emmeans", quietly = TRUE)) stop("Installer 'emmeans'")
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx'")
+
+library(lme4)
+library(lmerTest)
+library(effectsize)
+library(emmeans)
+
+# --- Excel-kolonnebokstav -> indeks ---
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# --- Les data ---
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+dv <- col_to_index("DV")
+dat_raw <- openxlsx::read.xlsx(path, cols = 1:dv)
+
+# --- ID i kolonne B ---
+idx_id <- 2L
+
+# --- Riktig radinndeling ---
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+# --- HF-kolonner AU:CH (40 punkt) ---
+hf_idx <- col_to_index("AU"):col_to_index("CH")
+stopifnot(length(hf_idx) == 40)
+
+# --- Tid ---
+time_min <- seq(0, 19.5, by = 0.5)
+
+make_long_hf <- function(rows, protocol_label) {
+  m <- as.matrix(dat_raw[rows, hf_idx, drop = FALSE])
+  storage.mode(m) <- "numeric"
+
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+  miss <- is.na(ids) | trimws(ids) == ""
+  ids[miss] <- as.character(seq_len(length(rows)))[miss]
+
+  data.frame(
+    id = rep(ids, each = length(time_min)),
+    protocol = protocol_label,
+    time_min = rep(time_min, times = length(ids)),
+    hf = as.vector(t(m))
+  )
+}
+
+hf_ts <- bind_rows(
+  make_long_hf(rows_ap,  "Apne"),
+  make_long_hf(rows_bik, "Bikarb"),
+  make_long_hf(rows_pla, "Placebo")
+) %>%
+  filter(is.finite(hf)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# --- LMM ---
+m_hf <- lmer(hf ~ protocol * time_min + (1 + time_min | id), data = hf_ts, REML = FALSE)
+
+cat("\nLMM (HF) – fixed effects:\n")
+print(summary(m_hf))
+
+cat("\nType III ANOVA (HF):\n")
+anova_hf <- anova(m_hf, type = 3)
+print(anova_hf)
+
+# --- Effektstørrelse (eta²p) ---
+cat("\nEffect size – partial eta squared (HF):\n")
+print(eta_squared(anova_hf, partial = TRUE))
+
+# --- Standardiserte koeffisienter ---
+cat("\nStandardiserte koeffisienter (HF):\n")
+print(standardize_parameters(m_hf, method = "refit"))
+
+# --- Slopes (utvikling over tid) ---
+cat("\nParvise forskjeller i utvikling over tid (HF):\n")
+emm_slope_hf <- emtrends(m_hf, ~ protocol, var = "time_min")
+print(pairs(emm_slope_hf, adjust = "holm"))
+
+# --- Effektstørrelse for slopes ---
+cat("\nEffect size for parvise slope-forskjeller (HF):\n")
+print(
+  eff_size(
+    emm_slope_hf,
+    sigma = sigma(m_hf),
+    edf = df.residual(m_hf)
+  )
+)
+
+# --- Startpuls (tid = 0) ---
+cat("\nEstimert startpuls (HF):\n")
+emm_start_hf <- emmeans(m_hf, ~ protocol, at = list(time_min = 0))
+print(emm_start_hf)
+
+# --- Parvise forskjeller startpuls ---
+cat("\nParvise forskjeller i startpuls (HF):\n")
+print(pairs(emm_start_hf, adjust = "holm"))
+
+# --- Effektstørrelse for startpuls ---
+cat("\nEffect size for parvise forskjeller i startpuls (HF):\n")
+print(
+  eff_size(
+    emm_start_hf,
+    sigma = sigma(m_hf),
+    edf = df.residual(m_hf)
+  )
+)
+
+# --- Enkel modell hvis konvergensproblemer ---
+# m_hf_simple <- lmer(hf ~ protocol * time_min + (1 | id), data = hf_ts, REML = FALSE)
+# anova(m_hf_simple, type = 3)
+# eta_squared(anova(m_hf_simple, type = 3), partial = TRUE)
+```
+
+Startpuls: 
+
+```{r}
+#| label: startpuls-hf
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx'")
+if (!requireNamespace("effectsize", quietly = TRUE)) stop("Installer 'effectsize'")
+if (!requireNamespace("tidyr", quietly = TRUE)) stop("Installer 'tidyr'")
+
+library(openxlsx)
+library(effectsize)
+library(tidyr)
+
+# --- Excel-kolonnebokstav -> indeks ---
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# --- Les data ---
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+dv <- col_to_index("DV")
+dat_raw <- openxlsx::read.xlsx(path, cols = 1:dv)
+
+# --- Rader og kolonner ---
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+idx_id <- 2L
+hf_start_col <- col_to_index("AU")
+
+# --- Lag datasett for startpuls ---
+hf_start <- bind_rows(
+  data.frame(
+    id = as.character(dat_raw[rows_ap, idx_id, drop = TRUE]),
+    protocol = "Apne",
+    hf_start = as.numeric(dat_raw[rows_ap, hf_start_col, drop = TRUE])
+  ),
+  data.frame(
+    id = as.character(dat_raw[rows_bik, idx_id, drop = TRUE]),
+    protocol = "Bikarb",
+    hf_start = as.numeric(dat_raw[rows_bik, hf_start_col, drop = TRUE])
+  ),
+  data.frame(
+    id = as.character(dat_raw[rows_pla, idx_id, drop = TRUE]),
+    protocol = "Placebo",
+    hf_start = as.numeric(dat_raw[rows_pla, hf_start_col, drop = TRUE])
+  )
+) %>%
+  filter(is.finite(hf_start)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# --- Deskriptiv statistikk ---
+cat("\nStartpuls HF – gjennomsnitt og SD:\n")
+hf_start %>%
+  group_by(protocol) %>%
+  summarise(
+    n = n(),
+    mean = mean(hf_start),
+    sd = sd(hf_start),
+    .groups = "drop"
+  ) %>%
+  print()
+
+# --- Repeated-measures ANOVA ---
+cat("\nRepeated-measures ANOVA for startpuls HF:\n")
+anova_start <- aov(hf_start ~ protocol + Error(id/protocol), data = hf_start)
+print(summary(anova_start))
+
+# --- Effektstørrelse for ANOVA: partial eta squared ---
+cat("\nEffect size for ANOVA – partial eta squared:\n")
+print(eta_squared(anova_start, partial = TRUE))
+
+# --- Bredt format for parvise tester ---
+wide_start <- hf_start %>%
+  pivot_wider(
+    id_cols = id,
+    names_from = protocol,
+    values_from = hf_start
+  )
+
+# --- Parvise paired t-tester ---
+p_ap_bik <- t.test(wide_start$Apne, wide_start$Bikarb, paired = TRUE)$p.value
+p_ap_pla <- t.test(wide_start$Apne, wide_start$Placebo, paired = TRUE)$p.value
+p_bik_pla <- t.test(wide_start$Bikarb, wide_start$Placebo, paired = TRUE)$p.value
+
+p_raw <- c(p_ap_bik, p_ap_pla, p_bik_pla)
+p_holm <- p.adjust(p_raw, method = "holm")
+
+# --- Cohen's dz for parvise sammenligninger ---
+dz_ap_bik <- cohens_d(wide_start$Apne, wide_start$Bikarb, paired = TRUE)
+dz_ap_pla <- cohens_d(wide_start$Apne, wide_start$Placebo, paired = TRUE)
+dz_bik_pla <- cohens_d(wide_start$Bikarb, wide_start$Placebo, paired = TRUE)
+
+cat("\nParvise sammenligninger med Holm-korrigering og Cohen's dz:\n")
+data.frame(
+  comparison = c("Apne - Bikarb", "Apne - Placebo", "Bikarb - Placebo"),
+  p_raw = p_raw,
+  p_holm = p_holm,
+  dz = c(
+    dz_ap_bik$Cohens_d,
+    dz_ap_pla$Cohens_d,
+    dz_bik_pla$Cohens_d
+  )
+) %>%
+  print()
+```
 
 
 Kadens:
@@ -834,6 +1442,126 @@ print(anova(m_rpm, type = 3))
 ```
 
 
+med ES:
+
+```{r}
+#| label: lmm-rpm2
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+if (!requireNamespace("lme4", quietly = TRUE)) stop("Installer 'lme4'")
+if (!requireNamespace("lmerTest", quietly = TRUE)) stop("Installer 'lmerTest'")
+if (!requireNamespace("effectsize", quietly = TRUE)) stop("Installer 'effectsize'")
+if (!requireNamespace("emmeans", quietly = TRUE)) stop("Installer 'emmeans'")
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx'")
+
+library(lme4)
+library(lmerTest)
+library(effectsize)
+library(emmeans)
+library(openxlsx)
+
+# Excel-kolonnebokstav -> indeks
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# Les data
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+dv <- col_to_index("DV")
+dat_raw <- openxlsx::read.xlsx(path, cols = 1:dv)
+
+# ID-kolonne
+idx_id <- 2L
+
+# Riktig radinndeling
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+# RPM-kolonner CI:DV
+rpm_idx <- col_to_index("CI"):col_to_index("DV")
+stopifnot(length(rpm_idx) == 40)
+
+# Tid (min)
+time_min <- seq(0, 19.5, by = 0.5)
+
+make_long_rpm <- function(rows, protocol_label) {
+  m <- as.matrix(dat_raw[rows, rpm_idx, drop = FALSE])
+  storage.mode(m) <- "numeric"
+
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+  miss <- is.na(ids) | trimws(ids) == ""
+  ids[miss] <- as.character(seq_len(length(rows)))[miss]
+
+  data.frame(
+    id = rep(ids, each = length(time_min)),
+    protocol = protocol_label,
+    time_min = rep(time_min, times = length(ids)),
+    rpm = as.vector(t(m))
+  )
+}
+
+rpm_ts <- bind_rows(
+  make_long_rpm(rows_ap,  "Apne"),
+  make_long_rpm(rows_bik, "Bikarb"),
+  make_long_rpm(rows_pla, "Placebo")
+) %>%
+  filter(is.finite(rpm)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# Linear mixed model
+m_rpm <- lmer(
+  rpm ~ protocol * time_min + (1 + time_min | id),
+  data = rpm_ts,
+  REML = FALSE
+)
+
+cat("\nLMM (RPM) – fixed effects:\n")
+print(summary(m_rpm))
+
+cat("\nType III ANOVA (RPM):\n")
+anova_rpm <- anova(m_rpm, type = 3)
+print(anova_rpm)
+
+# Effektstørrelse for hoved- og interaksjonseffekter
+cat("\nEffect size – partial eta squared (RPM):\n")
+print(eta_squared(anova_rpm, partial = TRUE))
+
+# Standardiserte koeffisienter
+cat("\nStandardiserte koeffisienter (RPM):\n")
+print(standardize_parameters(m_rpm, method = "refit"))
+
+# Parvise forskjeller i utvikling over tid / slope
+cat("\nParvise forskjeller i utvikling over tid / slope (RPM):\n")
+emm_slope_rpm <- emtrends(m_rpm, ~ protocol, var = "time_min")
+print(pairs(emm_slope_rpm, adjust = "holm"))
+
+# Effektstørrelse for parvise slope-forskjeller
+cat("\nEffect size for parvise slope-forskjeller (RPM):\n")
+print(
+  eff_size(
+    emm_slope_rpm,
+    sigma = sigma(m_rpm),
+    edf = df.residual(m_rpm)
+  )
+)
+
+# Hvis du får konvergens-advarsel:
+# m_rpm_simple <- lmer(rpm ~ protocol * time_min + (1 | id), data = rpm_ts, REML = FALSE)
+# anova_rpm_simple <- anova(m_rpm_simple, type = 3)
+# eta_squared(anova_rpm_simple, partial = TRUE)
+```
 
 
 
@@ -843,7 +1571,6 @@ print(anova(m_rpm, type = 3))
 
 ### Laktat 
 
-Som tidligere nevnt ble det tatt laktatprøver ti minutter inn i prestasjonstestene og ett minutt etter gjennomført test. Ved målingen etter ti minutt var gjennomsnittlig laktat i de forskjellige behandlingene: apné 6,79 ± 0,71 mmol/L, bikarbonat 9,43 ± 1,67 mmol/L og placebo 7,70 ± 1,29 mmol/L (se tabell 4.1). Her var det signifikant høyere laktatnivå hos bikarbonat enn de to andre behandlingene (p = 0,001). Det var også en signifikant forskjell mellom apné og placebo (p = 0,022). 
 
 ```{r}
 #| label: tbl-laktat
@@ -970,7 +1697,7 @@ ft <- ft %>%
 ft
 ```
 
-Det var signifikant økning i laktat ved alle tre protokollene (p = < 0,001), og en signifikant stører økning i laktat ved bikarbonat enn ved apné og placebo (p = < 0,001) (se figur 4.3). Post hov med Holm-korrigering viste at det også var signifikante forskjeller i laktat mellom behandlingene ved post-målingen. Apne målte 10,15 ± 1,85, bikarbonat målte 14.52 ± 2,44 og placebo målte 10,86 ± 1,83 (se tabell 4.1). Størst signifikans var det mellom bikarbonat i forhold til de to andre behandlingene (p = < 1e-5), men det var også ved postmålingen signifikant lavere laktatverdier ved apne enn ved placebo (p = 0,028) 
+
 
 ```{r}
 #| label: fig-laktat-slope-panels
@@ -1086,7 +1813,7 @@ ggplot() +
     size = 3.2
   ) +
   facet_wrap(~ protocol_lbl, nrow = 1) +
-  labs(x = NULL, y = "Laktat (mmol/L)") +
+  labs(x = NULL, y = "Laktat i blod (mmol/L)") +
   theme_classic(base_size = 12) +
   theme(
     legend.position = "none",
@@ -1195,12 +1922,154 @@ pvals <- sapply(levels(lac_long$protocol), function(pr) {
 print(p.adjust(pvals, method = "holm"))
 ```
 
+Med ES:
+
+```{r}
+#| label: stats-laktat2
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx'")
+if (!requireNamespace("effectsize", quietly = TRUE)) stop("Installer 'effectsize'")
+if (!requireNamespace("tidyr", quietly = TRUE)) stop("Installer 'tidyr'")
+
+library(openxlsx)
+library(effectsize)
+library(tidyr)
+
+# Excel-kolonnebokstav -> indeks
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# ---- Les data ----
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+dx <- col_to_index("DX")
+dat_raw <- openxlsx::read.xlsx(path, cols = 1:dx)
+
+# ---- Struktur ----
+idx_id <- 2L
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+col_10min <- col_to_index("DW")
+col_post  <- col_to_index("DX")
+
+# ---- Data ----
+make_block <- function(rows, protocol_label) {
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+  miss <- is.na(ids) | trimws(ids) == ""
+  ids[miss] <- as.character(seq_len(length(rows)))[miss]
+
+  data.frame(
+    id = ids,
+    protocol = protocol_label,
+    la_10min = suppressWarnings(as.numeric(dat_raw[rows, col_10min])),
+    la_post  = suppressWarnings(as.numeric(dat_raw[rows, col_post]))
+  )
+}
+
+dat <- bind_rows(
+  make_block(rows_ap,  "Apne"),
+  make_block(rows_bik, "Bikarb"),
+  make_block(rows_pla, "Placebo")
+) %>%
+  mutate(
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo")),
+    id = factor(id)
+  )
+
+lac_long <- bind_rows(
+  dat %>% transmute(id, protocol, time = "10min", value = la_10min),
+  dat %>% transmute(id, protocol, time = "Post",  value = la_post)
+) %>%
+  filter(is.finite(value)) %>%
+  mutate(time = factor(time, levels = c("10min", "Post")))
+
+# ---- ANOVA ----
+anova_lac <- aov(value ~ protocol * time + Error(id/(protocol*time)), data = lac_long)
+
+cat("\nToveis repeated-measures ANOVA (Laktat):\n")
+print(summary(anova_lac))
+
+# ---- Effektstørrelse (η²p) ----
+cat("\nEffect size – partial eta squared (Laktat):\n")
+print(eta_squared(anova_lac, partial = TRUE))
+
+# ---- Post-hoc protokoll ved 10min ----
+cat("\nPost-hoc 10min (Holm + dz):\n")
+x10 <- subset(lac_long, time == "10min")
+
+pw10 <- pairwise.t.test(x10$value, x10$protocol, paired = TRUE, p.adjust.method = "holm")
+print(pw10)
+
+wide10 <- x10 %>%
+  pivot_wider(id_cols = id, names_from = protocol, values_from = value)
+
+dz10 <- data.frame(
+  comparison = c("Apne-Bikarb", "Apne-Placebo", "Bikarb-Placebo"),
+  dz = c(
+    cohens_d(wide10$Apne, wide10$Bikarb, paired = TRUE)$Cohens_d,
+    cohens_d(wide10$Apne, wide10$Placebo, paired = TRUE)$Cohens_d,
+    cohens_d(wide10$Bikarb, wide10$Placebo, paired = TRUE)$Cohens_d
+  )
+)
+print(dz10)
+
+# ---- Post-hoc protokoll ved Post ----
+cat("\nPost-hoc Post (Holm + dz):\n")
+xp <- subset(lac_long, time == "Post")
+
+pwP <- pairwise.t.test(xp$value, xp$protocol, paired = TRUE, p.adjust.method = "holm")
+print(pwP)
+
+wideP <- xp %>%
+  pivot_wider(id_cols = id, names_from = protocol, values_from = value)
+
+dzP <- data.frame(
+  comparison = c("Apne-Bikarb", "Apne-Placebo", "Bikarb-Placebo"),
+  dz = c(
+    cohens_d(wideP$Apne, wideP$Bikarb, paired = TRUE)$Cohens_d,
+    cohens_d(wideP$Apne, wideP$Placebo, paired = TRUE)$Cohens_d,
+    cohens_d(wideP$Bikarb, wideP$Placebo, paired = TRUE)$Cohens_d
+  )
+)
+print(dzP)
+
+# ---- Endring over tid (dz) ----
+cat("\nEndring 10min → Post (Holm + dz):\n")
+
+change_results <- lapply(levels(lac_long$protocol), function(pr) {
+  tmp <- subset(lac_long, protocol == pr)
+  wide <- pivot_wider(tmp, id_cols = id, names_from = time, values_from = value)
+
+  if (!all(c("10min", "Post") %in% names(wide))) return(NULL)
+
+  d <- cohens_d(wide$Post, wide$`10min`, paired = TRUE)$Cohens_d
+  p <- t.test(wide$Post, wide$`10min`, paired = TRUE)$p.value
+
+  data.frame(protocol = pr, p = p, dz = d)
+})
+
+change_results <- bind_rows(change_results)
+change_results$p_holm <- p.adjust(change_results$p, method = "holm")
+
+print(change_results)
+```
 
 
 
 ### pH i blodet
 
-Når det gjelder pH-verdien i blodet var det signifikante fall i pH for alle behandlingene. Det var også signifikante forskjeller i utviklingen av pH gjennom prestasjonstestene med tanke på behandling (p = < 0,001). post hov analyse viser at bikarbonat hadde signifikant høyere pH-verdi ved alle fire målinger (Baseline: p = < 0,001, pre: p = < 0,001, 10 min: p = < 0,001, post: p = < 0,010), selv om utviklingen for alle tre behandlingene er parallelle (se figur 4.4). Det var ingen signifikante forskjeller mellom apné og placebo.
+
 
 ```{r}
 #| label: tbl-ph
@@ -1332,7 +2201,7 @@ ft <- ft %>%
 ft
 ```
 
-Ettersom oppvarming og apné ble utført før pre-målingen er utviklingen fra baseline spennende. Her var det ikke signifikant fall i pH for bikarbonat (p = 0,33) eller for apné (p = 0,08). For apné er p-verdien lav nok til at vi kan kalle det en tendes til fall i pH, men altså ikke signifikant. For placebo derimot var det et signifikant fall fra baseline til pre (p = 0,003).
+
 
 ```{r}
 #| label: fig-ph-slope-panels
@@ -1453,7 +2322,7 @@ ggplot() +
     size = 3.2
   ) +
   facet_wrap(~ protocol_lbl, nrow = 1) +
-  labs(x = NULL, y = "pH") +
+  labs(x = NULL, y = "pH i blodet") +
   theme_classic(base_size = 12) +
   theme(
     legend.position = "none",
@@ -1590,9 +2459,220 @@ if (all(c("ph.Baseline", "ph.Pre") %in% names(delta_wide))) {
 ```
 
 
+Med ES:
+
+```{r}
+#| label: ph-anova-posthoc-allinone2
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx'")
+if (!requireNamespace("effectsize", quietly = TRUE)) stop("Installer 'effectsize'")
+if (!requireNamespace("tidyr", quietly = TRUE)) stop("Installer 'tidyr'")
+
+library(openxlsx)
+library(effectsize)
+library(tidyr)
+
+# --- Hjelper: Excel-kolonnebokstav -> indeks ---
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# --- Les data ---
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+dat_raw <- openxlsx::read.xlsx(path)
+
+# --- Struktur i arket ---
+idx_id <- 2L
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+# pH-kolonner
+ph_cols <- c("DY", "DZ", "EA", "EB")
+ph_time <- c("Baseline", "Pre", "10min", "Post")
+ph_idx  <- sapply(ph_cols, col_to_index)
+
+# --- Bygg long-format ---
+make_block <- function(rows, protocol_label) {
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+  miss <- is.na(ids) | trimws(ids) == ""
+  ids[miss] <- as.character(seq_len(length(rows)))[miss]
+
+  m <- as.matrix(dat_raw[rows, ph_idx, drop = FALSE])
+  storage.mode(m) <- "numeric"
+
+  data.frame(
+    id = rep(ids, each = length(ph_time)),
+    protocol = protocol_label,
+    time = factor(rep(ph_time, times = length(ids)), levels = ph_time),
+    ph = as.vector(t(m))
+  )
+}
+
+ph_long <- bind_rows(
+  make_block(rows_ap,  "Apne"),
+  make_block(rows_bik, "Bikarb"),
+  make_block(rows_pla, "Placebo")
+) %>%
+  filter(is.finite(ph)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# ---------- 1) Toveis repeated-measures ANOVA ----------
+anova_ph <- aov(ph ~ protocol * time + Error(id/(protocol*time)), data = ph_long)
+
+cat("\nToveis repeated-measures ANOVA (pH):\n")
+print(summary(anova_ph))
+
+cat("\nEffect size – partial eta squared (pH):\n")
+print(eta_squared(anova_ph, partial = TRUE))
+
+# ---------- Hjelpefunksjon: paired t-test + dz ----------
+paired_test_dz <- function(x, y) {
+  keep <- is.finite(x) & is.finite(y)
+  x <- x[keep]
+  y <- y[keep]
+
+  if (length(x) < 2) {
+    return(data.frame(p_raw = NA_real_, dz = NA_real_))
+  }
+
+  p <- t.test(y, x, paired = TRUE)$p.value
+  d <- cohens_d(y, x, paired = TRUE)$Cohens_d
+
+  data.frame(p_raw = p, dz = d)
+}
+
+# ---------- 2) Post-hoc: protokollforskjeller ved hvert tidspunkt ----------
+protocol_tests_at_time <- function(df_time) {
+  wide <- df_time %>%
+    select(id, protocol, ph) %>%
+    pivot_wider(id_cols = id, names_from = protocol, values_from = ph)
+
+  comparisons <- list(
+    c("Apne", "Bikarb"),
+    c("Apne", "Placebo"),
+    c("Bikarb", "Placebo")
+  )
+
+  out <- lapply(comparisons, function(cc) {
+    res <- paired_test_dz(wide[[cc[1]]], wide[[cc[2]]])
+    data.frame(
+      comparison = paste(cc[1], "vs", cc[2]),
+      p_raw = res$p_raw,
+      dz = res$dz
+    )
+  }) %>%
+    bind_rows()
+
+  out$p_holm <- p.adjust(out$p_raw, method = "holm")
+  out
+}
+
+cat("\nPost-hoc: protokollforskjeller ved hvert tidspunkt (Holm + dz):\n")
+
+for (tt in levels(ph_long$time)) {
+  cat("\nTidspunkt:", tt, "\n")
+  tmp <- subset(ph_long, time == tt)
+  print(protocol_tests_at_time(tmp))
+}
+
+# ---------- 3) Post-hoc: tidsforskjeller innen hver protokoll ----------
+time_tests_within_protocol <- function(df_one_protocol) {
+  wide <- df_one_protocol %>%
+    select(id, time, ph) %>%
+    pivot_wider(id_cols = id, names_from = time, values_from = ph)
+
+  comparisons <- combn(ph_time, 2, simplify = FALSE)
+
+  out <- lapply(comparisons, function(cc) {
+    if (!all(cc %in% names(wide))) {
+      return(data.frame(
+        comparison = paste(cc[1], "vs", cc[2]),
+        p_raw = NA_real_,
+        dz = NA_real_
+      ))
+    }
+
+    res <- paired_test_dz(wide[[cc[1]]], wide[[cc[2]]])
+
+    data.frame(
+      comparison = paste(cc[1], "vs", cc[2]),
+      p_raw = res$p_raw,
+      dz = res$dz
+    )
+  }) %>%
+    bind_rows()
+
+  out$p_holm <- p.adjust(out$p_raw, method = "holm")
+  out
+}
+
+cat("\nPost-hoc: tidsforskjeller innen hver protokoll (Holm + dz):\n")
+
+for (pr in levels(ph_long$protocol)) {
+  cat("\nProtokoll:", pr, "\n")
+  tmp <- subset(ph_long, protocol == pr)
+  print(time_tests_within_protocol(tmp))
+}
+
+# ---------- 4) Planlagt post-hoc: Δ(Pre − Baseline) mellom protokoller ----------
+delta_wide <- ph_long %>%
+  filter(time %in% c("Baseline", "Pre")) %>%
+  select(id, protocol, time, ph) %>%
+  pivot_wider(id_cols = c(id, protocol), names_from = time, values_from = ph)
+
+if (all(c("Baseline", "Pre") %in% names(delta_wide))) {
+  delta_wide <- delta_wide %>%
+    mutate(delta_pre_minus_base = Pre - Baseline)
+
+  cat("\nPlanlagt post-hoc: Δ(Pre − Baseline) mellom protokoller (Holm + dz):\n")
+
+  delta_protocol <- delta_wide %>%
+    select(id, protocol, delta_pre_minus_base) %>%
+    pivot_wider(
+      id_cols = id,
+      names_from = protocol,
+      values_from = delta_pre_minus_base
+    )
+
+  comparisons <- list(
+    c("Apne", "Bikarb"),
+    c("Apne", "Placebo"),
+    c("Bikarb", "Placebo")
+  )
+
+  delta_out <- lapply(comparisons, function(cc) {
+    res <- paired_test_dz(delta_protocol[[cc[1]]], delta_protocol[[cc[2]]])
+
+    data.frame(
+      comparison = paste(cc[1], "vs", cc[2]),
+      p_raw = res$p_raw,
+      dz = res$dz
+    )
+  }) %>%
+    bind_rows()
+
+  delta_out$p_holm <- p.adjust(delta_out$p_raw, method = "holm")
+
+  print(delta_out)
+}
+```
+
+
 ### Hb-konsentrasjon
 
-Toveis repeated-measures ANOVA viste en signifikant forskjell på protokoll på Hb-konsentrasjon (P = 0,003)- Post hoc-analyse viste at Hb-konsentrasjon var høyere enn bikarbonat ved pre (p = 0,019) og post (p = 0,023), mens placebo hadde høyere Hb-konsentrasjon enn bikarbonat ved 10 min (p = 0,023). Her er det viktig å påpeke at både apné og placebo målte høyere Hb-konsentrasjonenn bikarbonat ved baseline – altså før apné-intervensjonen (se tabell 4.3). Forskjellene i Hb-konsentrasjons som beskrives over trenger derfor ikke å ha betydning selv om de er statistisk signifikante. 
+
 
 ```{r}
 #| label: tbl-hb
@@ -1725,7 +2805,7 @@ ft
 
 ```
 
-Det var nemlig ikke signifikant endring i Hb-konsentrasjon fra baseline til pre ved apné (p = 0,75). Fra pre til 10 min var det en signifikant økning for placebo (p = 0,03), men placebo hadde både en nedgang i Hb-konsentrasjon mellom baseline og pre, og en mindre økning fra 10 min til post (se figur 4.5). Totalt sett gjennom hele testen (baseline – pre – 10 min – post) var det ingen signifikante forskjeller mellom de tre behandlingene (p = 0,20)
+
 
 ```{r}
 #| label: fig-hb-slope-panels
@@ -1844,7 +2924,7 @@ ggplot() +
     size = 3.2
   ) +
   facet_wrap(~ protocol_lbl, nrow = 1) +
-  labs(x = NULL, y = "Hb-konsentrasjon") +
+  labs(x = NULL, y = "Hb-konsentrasjon (g/dL)") +
   theme_classic(base_size = 12) +
   theme(
     legend.position = "none",
@@ -2000,7 +3080,323 @@ if (all(c("hb.Baseline", "hb.Pre") %in% names(delta_wide))) {
 ```
 
 
+Med ES:
+
+```{r}
+#| label: hb-anova-posthoc-allinone2
+#| echo: false
+#| message: false
+#| warning: false
+
+library(dplyr)
+
+if (!requireNamespace("openxlsx", quietly = TRUE)) stop("Installer 'openxlsx'")
+if (!requireNamespace("effectsize", quietly = TRUE)) stop("Installer 'effectsize'")
+if (!requireNamespace("tidyr", quietly = TRUE)) stop("Installer 'tidyr'")
+
+library(openxlsx)
+library(effectsize)
+library(tidyr)
+
+# ---- Hjelper: Excel-kolonnebokstav -> indeks ----
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# ---- Les data ----
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+dat_raw <- openxlsx::read.xlsx(path)
+
+# ---- Struktur i arket ----
+idx_id <- 2L
+rows_ap  <- 2:11
+rows_bik <- 12:21
+rows_pla <- 22:31
+
+# Hb-kolonner
+hb_cols <- c("EC", "ED", "EE", "EF")
+hb_time <- c("Baseline", "Pre", "10min", "Post")
+hb_idx  <- sapply(hb_cols, col_to_index)
+
+# ---- Bygg long-format ----
+make_block <- function(rows, protocol_label) {
+  ids <- as.character(dat_raw[rows, idx_id, drop = TRUE])
+  miss <- is.na(ids) | trimws(ids) == ""
+  ids[miss] <- as.character(seq_len(length(rows)))[miss]
+
+  m <- as.matrix(dat_raw[rows, hb_idx, drop = FALSE])
+  storage.mode(m) <- "numeric"
+
+  data.frame(
+    id = rep(ids, each = length(hb_time)),
+    protocol = protocol_label,
+    time = factor(rep(hb_time, times = length(ids)), levels = hb_time),
+    hb = as.vector(t(m))
+  )
+}
+
+hb_long <- bind_rows(
+  make_block(rows_ap,  "Apne"),
+  make_block(rows_bik, "Bikarb"),
+  make_block(rows_pla, "Placebo")
+) %>%
+  filter(is.finite(hb)) %>%
+  mutate(
+    id = factor(id),
+    protocol = factor(protocol, levels = c("Apne", "Bikarb", "Placebo"))
+  )
+
+# =========================
+# 1) Toveis repeated-measures ANOVA (Hb)
+# =========================
+anova_hb <- aov(hb ~ protocol * time + Error(id/(protocol*time)), data = hb_long)
+
+cat("\nToveis repeated-measures ANOVA (Hb):\n")
+print(summary(anova_hb))
+
+cat("\nEffect size – partial eta squared (Hb):\n")
+print(eta_squared(anova_hb, partial = TRUE))
+
+# =========================
+# Hjelpefunksjon: paired t-test + Cohen's dz
+# =========================
+paired_test_dz <- function(x, y) {
+  keep <- is.finite(x) & is.finite(y)
+  x <- x[keep]
+  y <- y[keep]
+
+  if (length(x) < 2) {
+    return(data.frame(p_raw = NA_real_, dz = NA_real_))
+  }
+
+  p <- t.test(y, x, paired = TRUE)$p.value
+  d <- cohens_d(y, x, paired = TRUE)$Cohens_d
+
+  data.frame(p_raw = p, dz = d)
+}
+
+# =========================
+# 2) Post-hoc: protokollforskjeller ved hvert tidspunkt
+# =========================
+protocol_tests_at_time <- function(df_time) {
+  wide <- df_time %>%
+    select(id, protocol, hb) %>%
+    pivot_wider(id_cols = id, names_from = protocol, values_from = hb)
+
+  comparisons <- list(
+    c("Apne", "Bikarb"),
+    c("Apne", "Placebo"),
+    c("Bikarb", "Placebo")
+  )
+
+  out <- lapply(comparisons, function(cc) {
+    res <- paired_test_dz(wide[[cc[1]]], wide[[cc[2]]])
+
+    data.frame(
+      comparison = paste(cc[1], "vs", cc[2]),
+      p_raw = res$p_raw,
+      dz = res$dz
+    )
+  }) %>%
+    bind_rows()
+
+  out$p_holm <- p.adjust(out$p_raw, method = "holm")
+  out
+}
+
+cat("\nPost-hoc: protokollforskjeller ved hvert tidspunkt (Holm + dz):\n")
+
+for (tt in levels(hb_long$time)) {
+  cat("\nTidspunkt:", tt, "\n")
+  tmp <- subset(hb_long, time == tt)
+  print(protocol_tests_at_time(tmp))
+}
+
+# =========================
+# 3) Post-hoc: tidsforskjeller innen hver protokoll
+# =========================
+time_tests_within_protocol <- function(df_one_protocol) {
+  wide <- df_one_protocol %>%
+    select(id, time, hb) %>%
+    pivot_wider(id_cols = id, names_from = time, values_from = hb)
+
+  comparisons <- combn(hb_time, 2, simplify = FALSE)
+
+  out <- lapply(comparisons, function(cc) {
+    if (!all(cc %in% names(wide))) {
+      return(data.frame(
+        comparison = paste(cc[1], "vs", cc[2]),
+        p_raw = NA_real_,
+        dz = NA_real_
+      ))
+    }
+
+    res <- paired_test_dz(wide[[cc[1]]], wide[[cc[2]]])
+
+    data.frame(
+      comparison = paste(cc[1], "vs", cc[2]),
+      p_raw = res$p_raw,
+      dz = res$dz
+    )
+  }) %>%
+    bind_rows()
+
+  out$p_holm <- p.adjust(out$p_raw, method = "holm")
+  out
+}
+
+cat("\nPost-hoc: tidsforskjeller innen hver protokoll (Holm + dz):\n")
+
+for (pr in levels(hb_long$protocol)) {
+  cat("\nProtokoll:", pr, "\n")
+  tmp <- subset(hb_long, protocol == pr)
+  print(time_tests_within_protocol(tmp))
+}
+
+# =========================
+# 4) Planlagt kontrast: Δ(Pre − Baseline) mellom protokoller
+# =========================
+delta_wide <- hb_long %>%
+  filter(time %in% c("Baseline", "Pre")) %>%
+  select(id, protocol, time, hb) %>%
+  pivot_wider(id_cols = c(id, protocol), names_from = time, values_from = hb)
+
+if (all(c("Baseline", "Pre") %in% names(delta_wide))) {
+  delta_wide <- delta_wide %>%
+    mutate(delta_pre_minus_base = Pre - Baseline)
+
+  cat("\nPlanlagt post-hoc: Δ(Pre − Baseline) mellom protokoller (Holm + dz):\n")
+
+  delta_protocol <- delta_wide %>%
+    select(id, protocol, delta_pre_minus_base) %>%
+    pivot_wider(
+      id_cols = id,
+      names_from = protocol,
+      values_from = delta_pre_minus_base
+    )
+
+  comparisons <- list(
+    c("Apne", "Bikarb"),
+    c("Apne", "Placebo"),
+    c("Bikarb", "Placebo")
+  )
+
+  delta_out <- lapply(comparisons, function(cc) {
+    res <- paired_test_dz(delta_protocol[[cc[1]]], delta_protocol[[cc[2]]])
+
+    data.frame(
+      comparison = paste(cc[1], "vs", cc[2]),
+      p_raw = res$p_raw,
+      dz = res$dz
+    )
+  }) %>%
+    bind_rows()
+
+  delta_out$p_holm <- p.adjust(delta_out$p_raw, method = "holm")
+
+  print(delta_out)
+}
+```
 
 
+Apné tid vs Hb:
+
+```{r}
+#| label: apnea-hb-plot-clean
+#| echo: false
+#| message: false
+#| warning: false
+
+options(encoding = "UTF-8")
+
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+library(effectsize)
+
+# ---- Unicode-tekst (robust løsning) ----
+txt_apne        <- "Apn\u00e9"
+txt_kort_apne   <- "Kort apn\u00e9"
+txt_lang_apne   <- "Lang apn\u00e9"
+txt_okning      <- "\u00d8kning/ingen reduksjon"
+txt_reduksjon   <- "Reduksjon i Hb"
+
+# ---- Hjelper: Excel-kolonnebokstav -> indeks ----
+col_to_index <- function(x) {
+  x <- toupper(x)
+  chars <- strsplit(x, "")[[1]]
+  sum(match(chars, LETTERS) * 26^(rev(seq_along(chars)) - 1))
+}
+
+# ---- Les data ----
+path <- file.path("data", "Data.xlsx")
+if (!file.exists(path)) stop("Finner ikke data/Data.xlsx")
+
+dat_raw <- openxlsx::read.xlsx(path)
+
+# ---- Struktur ----
+idx_id  <- 2L
+rows_ap <- 2:11
+
+hb_baseline_idx <- col_to_index("EC")
+hb_pre_idx      <- col_to_index("ED")
+apnea_time_idx  <- col_to_index("EG")
+
+# ---- Datasett ----
+apnea_df <- data.frame(
+  id = as.character(dat_raw[rows_ap, idx_id, drop = TRUE]),
+  Hb_baseline = as.numeric(dat_raw[rows_ap, hb_baseline_idx, drop = TRUE]),
+  Hb_pre = as.numeric(dat_raw[rows_ap, hb_pre_idx, drop = TRUE]),
+  Apne_tid = as.numeric(dat_raw[rows_ap, apnea_time_idx, drop = TRUE]),
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    delta_Hb = Hb_pre - Hb_baseline,
+    percent_delta_Hb = ((Hb_pre - Hb_baseline) / Hb_baseline) * 100
+  ) %>%
+  filter(
+    is.finite(Hb_baseline),
+    is.finite(Hb_pre),
+    is.finite(Apne_tid),
+    is.finite(delta_Hb)
+  )
+
+# =========================
+# Plot 1: ΔHb
+# =========================
+ggplot(apnea_df, aes(x = Apne_tid, y = delta_Hb)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  labs(
+    x = "Apn\u00e9-tid (sekunder)",
+    y = "\u0394Hb (Pre - baseline)",
+    title = "Sammenheng mellom apn\u00e9-tid og Hb-respons"
+  )
+
+# =========================
+# Plot 2: prosentvis Hb
+# =========================
+ggplot(apnea_df, aes(x = Apne_tid, y = percent_delta_Hb)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  labs(
+    x = "Apn\u00e9-tid (sekunder)",
+    y = "Endring i Hb-konsentrasjon (%)",
+    title = "Sammenheng mellom apn\u00e9-tid\nog prosentvis Hb-respons"
+  )
+```
 
 
